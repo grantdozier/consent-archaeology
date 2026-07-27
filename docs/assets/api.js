@@ -15,6 +15,11 @@
 // This const is the single source of truth for the API origin.
 const API_BASE = 'https://dig-api.doziertechgroup.workers.dev';
 
+// How long to wait before giving up on a request. Generous enough for a cold
+// Worker start on a slow phone connection, short enough that a dead backend
+// reports itself as dead instead of looking like a hung page.
+const REQUEST_TIMEOUT_MS = 12000;
+
 window.CA = window.CA || {};
 
 CA.api = (function () {
@@ -80,20 +85,40 @@ CA.api = (function () {
       headers['authorization'] = 'Bearer ' + token;
     }
 
+    // Hard timeout. Without one, a request to a host that does not resolve —
+    // which is exactly the state before the Worker is first deployed — hangs on
+    // the browser's own default, tens of seconds, with the UI stuck on
+    // "working…". A spinner that never resolves is indistinguishable from a
+    // frozen page, and silently reads as "it might still succeed" when it never
+    // will. Failing fast and saying so is the honest behaviour.
+    const ctrl = new AbortController();
+    const timer = setTimeout(function () { ctrl.abort(); }, opts.timeoutMs || REQUEST_TIMEOUT_MS);
+
     let res;
     try {
       res = await fetch(API_BASE + path, {
         method: opts.method || 'GET',
         headers: headers,
-        body: body
+        body: body,
+        signal: ctrl.signal
       });
     } catch (err) {
+      if (err && err.name === 'AbortError') {
+        throw new ApiError(
+          'The backend did not answer within ' + Math.round(REQUEST_TIMEOUT_MS / 1000) +
+          ' seconds, so we stopped waiting. Nothing was saved and nothing was sent. ' +
+          'Most likely the Worker is not deployed yet.',
+          { status: 0, timedOut: true }
+        );
+      }
       // Network-level failure: backend not deployed, DNS, offline, CORS.
       throw new ApiError(
         "Could not reach the backend at all. Most likely the Worker isn't deployed " +
         'yet, or your connection dropped. Raw error: ' + err.message,
         { status: 0 }
       );
+    } finally {
+      clearTimeout(timer);
     }
 
     if (!res.ok) {
