@@ -1,22 +1,49 @@
 /* ============================================================
    CONSENT ARCHAEOLOGY — terminal.css
-   Phosphor CRT aesthetic. One stylesheet, no build step.
-   Palette (DESIGN.md §7): #33ff66 on #0a0e0a, amber #ffb000.
-   All motion is opt-out via prefers-reduced-motion — the bit
-   never breaks a11y.
+   One stylesheet, no build step.
+
+   READABILITY NOTE — why this is not a saturated-green CRT.
+   The first cut set `body { color: #33ff66 }`: every word on the
+   page in maximum-chroma green on near-black. That reads as a
+   terminal for about ten seconds and then makes your eyes vibrate,
+   for three compounding reasons:
+     1. Saturated green on near-black is the highest-chroma pair an
+        sRGB display can produce. LCD subpixel layout renders its
+        edges with visible colour fringing, so the text appears to
+        shimmer.
+     2. A text-shadow glow on body copy softens every glyph edge, so
+        the eye never finds a stable focal plane and keeps hunting.
+     3. Scanlines + flicker put a moving pattern *on top of* text
+        that the eye tries to track.
+   So: prose is a low-chroma green-grey (--ink), saturated phosphor
+   is an ACCENT ONLY — headings, keywords, status marks — glow is
+   gone from body text, and the CRT overlay is gone entirely. The
+   thing still reads unmistakably as a terminal, because that was
+   always coming from the monospace, the rules and the layout, not
+   from the eye strain.
+
+   Measured contrast (worst case across --bg / --bg-raised / --bg-truth):
+     --ink      11.6:1  AAA   body prose
+     --phos     11.7:1  AAA   headings, accents
+     --amber     8.1:1  AAA   warnings, truth-panel heads
+     --ink-dim   6.7:1  AA    secondary prose
+     --phos-dim  5.5:1  AA    rules, meta, quiet labels
+   The bottom two are AA, not AAA — they are used for short labels
+   and never for reading copy.
    ============================================================ */
 
 :root {
-  --bg: #0a0e0a;
-  --bg-deep: #050805;
-  --bg-raised: #0d130d;
-  --bg-truth: #0c110e;
-  --phos: #33ff66;          /* primary phosphor green — 15.5:1 on bg */
-  --phos-dim: #23c455;      /* secondary green — >7:1 on bg */
-  --ink: #cfffdc;           /* long-form prose, near-white green */
-  --amber: #ffb000;         /* warnings, truth-panel headers — 11.4:1 */
-  --edge: #1c3322;
-  --edge-bright: #2c5236;
+  --bg: #0c100e;            /* lifted off pure black — less halation */
+  --bg-deep: #080b09;
+  --bg-raised: #121816;
+  --bg-truth: #101614;
+  --ink: #c3d4c8;           /* body prose — low chroma, ~12:1 on bg */
+  --ink-dim: #8fa396;       /* secondary prose — ~7.2:1 */
+  --phos: #6ee89a;          /* ACCENT green — headings, keywords */
+  --phos-dim: #4f9e70;      /* quiet accent, rules, meta */
+  --amber: #e0a34a;         /* warnings, truth-panel headers — ~8.7:1 */
+  --edge: #22302a;
+  --edge-bright: #33473c;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -30,61 +57,17 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
+  /* One very soft wash at the top. No moving parts, no repeating
+     pattern over text. */
   background:
-    radial-gradient(ellipse at 50% -10%, rgba(51, 255, 102, 0.07), transparent 55%),
+    radial-gradient(ellipse at 50% -15%, rgba(110, 232, 154, 0.035), transparent 60%),
     var(--bg);
-  color: var(--phos);
+  color: var(--ink);
   font-family: var(--mono);
-  font-size: 15px;
-  line-height: 1.5;
-}
-
-/* ---------- scanlines / CRT overlay (pure decoration) ---------- */
-
-.scanlines {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 999;
-  background: repeating-linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0) 0 2px,
-    rgba(0, 0, 0, 0.16) 2px 3px
-  );
-  animation: ca-flicker 6s steps(60) infinite;
-}
-
-.scanlines::after {
-  /* slow travelling CRT band */
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 90px;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    rgba(51, 255, 102, 0.035),
-    transparent
-  );
-  animation: ca-band 9s linear infinite;
-}
-
-@keyframes ca-flicker {
-  0%, 100% { opacity: 1; }
-  92%      { opacity: 0.94; }
-  93%      { opacity: 1; }
-  97%      { opacity: 0.97; }
-}
-
-@keyframes ca-band {
-  from { top: -90px; }
-  to   { top: 100%; }
-}
-
-/* Reduced motion: the entire CRT act is fired. */
-@media (prefers-reduced-motion: reduce) {
-  .scanlines { display: none; }
+  font-size: 15.5px;
+  line-height: 1.65;        /* was 1.5 — monospace prose needs the air */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 /* ---------- layout scaffold ---------- */
@@ -154,20 +137,40 @@ code { font-family: inherit; color: var(--amber); }
 .dim   { color: var(--phos-dim); }
 .ink   { color: var(--ink); }
 
-.logo-block { overflow-x: auto; }
+/* ---------- wordmark ----------
+   Was ASCII block-art (██████╗). Box-drawing and block glyphs have
+   inconsistent advance widths and baselines across monospace fonts,
+   so the banner rendered visibly crooked on most machines and forced
+   a horizontal scrollbar on phones. Real type instead: perfectly
+   aligned everywhere, scales cleanly, and screen readers get a
+   heading rather than a wall of punctuation. */
 
-pre.logo {
-  margin: 0 0 0.25rem;
+.wordmark {
+  margin: 0 0 0.15rem;
+  display: block;
+  font-size: clamp(1.9rem, 7.5vw, 3.6rem);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.05;
   color: var(--phos);
-  font-size: clamp(5.5px, 1.75vw, 13px);
-  line-height: 1.15;
-  text-shadow: 0 0 8px rgba(51, 255, 102, 0.45);
+  text-indent: 0.14em;      /* optically re-centre the trailing letterspace */
+}
+
+.wordmark-sub {
+  display: block;
+  font-size: clamp(0.68rem, 2.4vw, 0.98rem);
+  font-weight: 400;
+  letter-spacing: 0.62em;
+  color: var(--phos-dim);
+  text-indent: 0.62em;
+  margin-bottom: 0.85rem;
 }
 
 .tagline {
   color: var(--ink);
   font-size: 1.05rem;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
+  margin-top: 0;
 }
 
 /* ---------- the two-panel gag (DESIGN.md §3) ---------- */
@@ -192,8 +195,10 @@ pre.logo {
 }
 
 .pane-theater {
-  background: rgba(13, 19, 13, 0.72);
-  box-shadow: inset 0 0 40px rgba(51, 255, 102, 0.05);
+  background: var(--bg-raised);
+  /* inner glow removed — it lifted the backdrop directly behind the
+     text and cut local contrast, which is the other thing that makes
+     monospace shimmer. */
 }
 
 .pane-truth {
@@ -276,10 +281,17 @@ pre.logo {
   margin-left: 1px;
   background: var(--phos);
   vertical-align: text-bottom;
-  animation: ca-blink 1.06s steps(1) infinite;
+  /* Softened: a hard on/off blink sits in peripheral vision and pulls
+     the eye off whatever you are actually reading. Slower, and it
+     fades rather than snapping, so it reads as "alive" not "strobing". */
+  animation: ca-blink 1.6s ease-in-out infinite;
 }
 
-@keyframes ca-blink { 50% { opacity: 0; } }
+@keyframes ca-blink {
+  0%, 42%  { opacity: 1; }
+  58%, 92% { opacity: 0.18; }
+  100%     { opacity: 1; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .caret { animation: none; }   /* solid caret, no blink */
