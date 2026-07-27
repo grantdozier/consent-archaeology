@@ -527,15 +527,24 @@ input:focus, textarea:focus, select:focus { border-color: var(--phos); }
   letter-spacing: 0.06em;
 }
 
+/* The note hangs off an arrow marker. Same trap as .pane-head: a
+   trailing space inside content: collapses, and a negative margin-left
+   pulled the glyph into the box padding where it got visually clipped.
+   Flex holds the gap and the arrow keeps its own column. */
 .ssn-gag .ssn-note {
+  display: flex;
+  gap: 0.5em;
   margin: 0.6rem 0 0;
-  padding-left: 1.4rem;
   color: var(--ink);
   font-size: 0.84rem;
   line-height: 1.6;
 }
 
-.ssn-gag .ssn-note::before { content: "\21B3 "; color: var(--amber); margin-left: -1.4rem; }
+.ssn-gag .ssn-note::before {
+  content: "\21B3";
+  flex: none;
+  color: var(--amber);
+}
 
 .ssn-gag a { color: var(--amber); }
 
