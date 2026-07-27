@@ -309,7 +309,7 @@
     const findingId = f.findingId != null ? f.findingId : (f.id != null ? f.id : null);
 
     card.innerHTML =
-      '<h3>▓ ' + esc(name) + '</h3>' +
+      '<h3 class="finding-name">' + esc(name) + '</h3>' +
       '<dl>' +
       '<dt>Legal entity</dt><dd>' + esc(b.legalName || 'not on file') + '</dd>' +
       '<dt>Headquarters</dt><dd>' + esc(b.hqAddress || 'not on file') + '</dd>' +

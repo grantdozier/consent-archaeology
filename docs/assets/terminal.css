@@ -179,8 +179,11 @@ code { font-family: inherit; color: var(--amber); }
   display: grid;
   grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
   gap: 1.25rem;
-  align-items: start;
-  margin: 1.5rem 0;
+  /* stretch, not start: the theater pane is usually shorter than the
+     truth pane, and two boxes of different heights sitting on a shared
+     top edge read as misaligned rather than as a pair. */
+  align-items: stretch;
+  margin: 1.25rem 0;
 }
 
 /* mobile: stack, theater first (source order already theater-first) */
@@ -207,18 +210,52 @@ code { font-family: inherit; color: var(--amber); }
 }
 
 .pane-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
   margin: 0 0 0.9rem;
   padding-bottom: 0.55rem;
   border-bottom: 1px solid var(--edge);
   font-size: 0.8rem;
   letter-spacing: 0.2em;
+  color: var(--phos);
 }
 
-.pane-theater .pane-head::before { content: "\2593\2593 "; }  /* ▓▓ */
+/* Panel marker. Was content:"▓▓ " — U+2593 MEDIUM SHADE renders as a
+   dithered checkerboard (the "noise"), and a trailing space inside
+   content: collapses in most engines, so the glyphs sat flush against
+   the first letter. A drawn bar is crisp at every zoom level, holds
+   its gap via flex, and stays out of the accessibility tree. */
+.pane-head::before {
+  content: "";
+  flex: none;
+  width: 3px;
+  height: 0.95em;
+  background: currentColor;
+  opacity: 0.85;
+}
 
 .pane-truth .pane-head {
   color: var(--amber);
-  border-bottom-color: rgba(255, 176, 0, 0.35);
+  border-bottom-color: rgba(224, 163, 74, 0.3);
+}
+
+/* Broker card heading — same drawn marker as .pane-head, for the same
+   reason (it was a literal ▓). */
+.finding-name {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  color: var(--phos);
+}
+
+.finding-name::before {
+  content: "";
+  flex: none;
+  width: 3px;
+  height: 0.95em;
+  background: currentColor;
+  opacity: 0.85;
 }
 
 .pane-truth p, .pane-truth li {
