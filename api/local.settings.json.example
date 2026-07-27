@@ -1,0 +1,65 @@
+{
+  "_README": [
+    "Copy this file to api/local.settings.json and fill in the PLACEHOLDER values.",
+    "local.settings.json is gitignored and must stay that way — it is the one file",
+    "in this repo that will ever hold live keys. If you find yourself about to",
+    "`git add -f` it, stop.",
+    "",
+    "Nothing here is read in production. In Azure these same names live as App",
+    "Settings on func-consent-archaeology and are set once from DEPLOY.md §4;",
+    "process.env sees them identically in both places, which is the whole point.",
+    "",
+    "Needs Node 22 and Azure Functions Core Tools v4:  cd api && npm i && func start",
+    "",
+    "The authoritative list of what is REQUIRED is the REQUIRED array in",
+    "src/lib/config.js — that is the code that actually throws at startup. If this",
+    "file and that array disagree, the array is right.",
+    "",
+    "Where each value comes from:",
+    "  COSMOS_ENDPOINT / COSMOS_KEY  az cosmosdb show + keys list (DEPLOY.md §4a)",
+    "  PII_ENCRYPTION_KEY            openssl rand -base64 32  — GENERATE YOUR OWN.",
+    "                                Must decode to EXACTLY 32 bytes; config.js checks.",
+    "  PII_HASH_SALT                 openssl rand -base64 32  — GENERATE YOUR OWN.",
+    "  BREVO_API_KEY                 Brevo dashboard -> SMTP & API -> API keys",
+    "  FIRECRAWL_API_KEY             Firecrawl dashboard -> API keys. OPTIONAL: absent",
+    "                                means each broker records firecrawl_not_configured",
+    "                                instead of the app refusing to boot.",
+    "  PUBLIC_APP_URL                Where magic links land — the FRONTEND origin, the",
+    "                                page serving verify.html. Never the API origin.",
+    "  SENDER_EMAIL                  Must match a sender Brevo has verified, or sends",
+    "                                are rejected and the R3 gate never opens.",
+    "",
+    "Use a SEPARATE dev PII_ENCRYPTION_KEY from production. They are not",
+    "interchangeable: data encrypted under one key is unreadable under the other,",
+    "and pasting the production key into a file on a laptop is how it leaks.",
+    "",
+    "AzureWebJobsStorage points at Azurite (npm i -g azurite; run `azurite`).",
+    "Cosmos has no usable local emulator on every platform, so local runs point at",
+    "the real Cosmos account. Free tier is 1000 RU/s shared across the database —",
+    "shared with production. Keep local test volume small."
+  ],
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+
+    "COSMOS_ENDPOINT": "https://cosmos-dtg-consent-arch.documents.azure.com:443/",
+    "COSMOS_KEY": "PLACEHOLDER-cosmos-primary-key",
+    "COSMOS_DB": "consentarch",
+
+    "PII_ENCRYPTION_KEY": "PLACEHOLDER-generate-with-openssl-rand-base64-32",
+    "PII_HASH_SALT": "PLACEHOLDER-generate-with-openssl-rand-base64-32",
+
+    "BREVO_API_KEY": "PLACEHOLDER-brevo-api-key",
+    "FIRECRAWL_API_KEY": "PLACEHOLDER-firecrawl-api-key",
+    "SENDER_EMAIL": "clearance@doziertechgroup.com",
+    "SENDER_NAME": "CONSENT ARCHAEOLOGY",
+
+    "ALLOWED_ORIGIN": "http://localhost:8080",
+    "PUBLIC_APP_URL": "http://localhost:8080"
+  },
+  "Host": {
+    "CORS": "http://localhost:8080",
+    "CORSCredentials": false
+  }
+}

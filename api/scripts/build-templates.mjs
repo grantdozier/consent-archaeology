@@ -1,21 +1,22 @@
 #!/usr/bin/env node
-// build-templates.mjs — generate worker/src/templates.js from legal/
+// build-templates.mjs — generate api/src/lib/templates.js from legal/
 //
 // WHY THIS EXISTS
-// Cloudflare Workers cannot read repo files at runtime, but `legal/` must stay
-// the single source of truth: those documents are reviewed as legal text, and a
-// hand-copied duplicate inside worker/src would silently drift the moment
-// someone fixes a citation. So we generate.
+// The deployed function bundle should not be reading and parsing markdown off
+// disk on every cold start, but `legal/` must stay the single source of truth:
+// those documents are reviewed as legal text, and a hand-copied duplicate
+// inside api/src would silently drift the moment someone fixes a citation.
+// So we generate.
 //
-//   legal/templates/*.md  +  legal/DISCLAIMER.md   ──▶   worker/src/templates.js
+//   legal/templates/*.md  +  legal/DISCLAIMER.md   ──▶   api/src/lib/templates.js
 //
-// worker/src/templates.js is a BUILD ARTIFACT. Never edit it directly — edit the
-// markdown in legal/ and re-run:
+// api/src/lib/templates.js is a BUILD ARTIFACT. Never edit it directly — edit
+// the markdown in legal/ and re-run:
 //
-//     node worker/scripts/build-templates.mjs
+//     node api/scripts/build-templates.mjs
 //
-// Run it before every `wrangler deploy`. CI enforces freshness (see
-// .github/workflows/templates-fresh.yml): if the committed artifact doesn't match
+// Run it before every deploy. CI enforces freshness (see
+// .github/workflows/invariants.yml): if the committed artifact doesn't match
 // what legal/ generates, the build fails.
 //
 // WHAT IT DOES
@@ -34,7 +35,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
 const LEGAL = join(REPO, 'legal');
-const OUT = join(REPO, 'worker', 'src', 'templates.js');
+const OUT = join(REPO, 'api', 'src', 'lib', 'templates.js');
 
 // Key ──▶ file. Keys are the `type` values accepted by POST /api/demand.
 const SOURCES = {
@@ -100,13 +101,13 @@ for (const body of Object.values(built)) {
 const out = `// GENERATED FILE — DO NOT EDIT.
 //
 // Source of truth: legal/templates/*.md and legal/DISCLAIMER.md.
-// Regenerate:  node worker/scripts/build-templates.mjs
+// Regenerate:  node api/scripts/build-templates.mjs
 //
 // Editing this file directly will be overwritten on the next build and will
 // desync the deployed letters from the reviewed legal text.
 //
 // Conditional markers <!-- IF:X --> / <!-- ENDIF:X --> survive into these strings
-// and are resolved per-request by worker/src/routes/demand.js, because the
+// and are resolved per-request by api/src/routes/demand.js, because the
 // sender's jurisdiction is only known at request time.
 
 /** Merge tokens appearing across all templates. demand.js must supply every one. */
@@ -125,6 +126,6 @@ ${Object.entries(built).map(([k, v]) => `  ${k}: \`${lit(v)}\`,`).join('\n\n')}
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, out, 'utf8');
 
-console.log(`build-templates: wrote worker/src/templates.js`);
+console.log(`build-templates: wrote api/src/lib/templates.js`);
 console.log(`  templates: ${Object.keys(built).join(', ')}`);
 console.log(`  tokens:    ${[...tokens].sort().join(' ')}`);

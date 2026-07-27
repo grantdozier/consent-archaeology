@@ -10,7 +10,7 @@
     {{REFERENCE_ID}}
   CONDITIONAL BLOCK: lines between "IF:DATA_BROKER" and "ENDIF:DATA_BROKER" comment
   markers are included only when the recipient appears on the CPPA data broker
-  registry (worker/src/brokers.js carries the flag); otherwise the generator strips
+  registry (api/src/lib/brokers.js carries the flag); otherwise the generator strips
   the block, markers included.
   R2 COMPLIANCE: this letter uses "delete" because §1798.105 uses "delete" — quoting
   the statutory verb in a demand TO a company is not a claim WE delete anything.

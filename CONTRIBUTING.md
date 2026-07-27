@@ -73,7 +73,7 @@ must be the same person, cryptographically tied to this session, forever.
 
 No "search the whole internet for this person," no Google-dorking module, no social
 media scraping, no generic URL parameter fed to Firecrawl. **Why:** the allowlist
-(`worker/src/brokers.js`) is a reviewed set of data-broker endpoints with named legal
+(`api/src/lib/brokers.js`) is a reviewed set of data-broker endpoints with named legal
 entities behind them. Open-web crawl converts a targeted compliance tool into a
 general-purpose profile builder — the exact thing this project exists to fight. Also:
 Firecrawl reads HTML. It does not "trace IPs," and no PR copy may imply otherwise.
@@ -100,7 +100,7 @@ may be loud; the claims must be exact.
 
 ## Adding a broker to the allowlist
 
-The allowlist lives at `worker/src/brokers.js`. It is short on purpose. A PR adding a
+The allowlist lives at `api/src/lib/brokers.js`. It is short on purpose. A PR adding a
 broker **must** include every one of the following, each with a source:
 
 | Required field | What it is | Acceptable source |

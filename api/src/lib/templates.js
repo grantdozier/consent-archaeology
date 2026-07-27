@@ -1,13 +1,13 @@
 // GENERATED FILE — DO NOT EDIT.
 //
 // Source of truth: legal/templates/*.md and legal/DISCLAIMER.md.
-// Regenerate:  node worker/scripts/build-templates.mjs
+// Regenerate:  node api/scripts/build-templates.mjs
 //
 // Editing this file directly will be overwritten on the next build and will
 // desync the deployed letters from the reviewed legal text.
 //
 // Conditional markers <!-- IF:X --> / <!-- ENDIF:X --> survive into these strings
-// and are resolved per-request by worker/src/routes/demand.js, because the
+// and are resolved per-request by api/src/routes/demand.js, because the
 // sender's jurisdiction is only known at request time.
 
 /** Merge tokens appearing across all templates. demand.js must supply every one. */

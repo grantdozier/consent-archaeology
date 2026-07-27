@@ -1,0 +1,19 @@
+{
+  "name": "consent-archaeology-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CONSENT ARCHAEOLOGY api — Azure Functions (Node 22) + Cosmos DB. ES modules throughout.",
+  "main": "src/functions/*.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "func start",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "@azure/cosmos": "^4.2.0",
+    "@azure/functions": "^4.6.0"
+  }
+}

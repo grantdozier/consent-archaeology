@@ -95,7 +95,7 @@ https://oag.ca.gov/contact/consumer-complaint-against-business-or-company
   (registry moved from the AG to the CPPA), disclosing categories collected. **SB 361**
   (eff. 2026-01-01) expanded the disclosures: whether the broker sells/shares to
   **foreign actors, government entities, law enforcement, or AI-model developers**.
-  The public registry is the source for `worker/src/brokers.js` legal-entity fields.
+  The public registry is the source for `api/src/lib/brokers.js` legal-entity fields.
 - **DROP:** one free deletion request to all registered brokers —
   https://consumer.drop.privacy.ca.gov — consumer-accessible since **2026-01-01**;
   **mandatory broker processing begins 2026-08-01** (see the flag box at top).

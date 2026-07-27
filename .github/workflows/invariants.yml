@@ -3,6 +3,11 @@
 # These are not style checks. Each one maps to a rule that, if broken, turns a
 # privacy tool into the thing it exists to fight. A PR that trips any of them
 # does not merge.
+#
+# PATHS: the backend lives in `api/` (Azure Functions). It used to live in
+# `worker/` (Cloudflare). Every grep below was repointed during that move — see
+# the preflight step for why that repointing is the most dangerous part of any
+# such migration.
 name: invariants
 
 on:
@@ -20,14 +25,41 @@ jobs:
         with:
           node-version: '22'
 
+      # ── Layout preflight — assert the scanned paths exist ────────────────────
+      # This step guards against the specific way a check like this dies: not by
+      # failing, but by quietly succeeding. `grep -r pattern missing/dir/` exits
+      # non-zero, which reads to `if grep ...; then fail; fi` as "no match found
+      # — all clear". So when the backend moved worker/ → api/, every rule below
+      # would have printed OK forever while scanning a directory that no longer
+      # existed. A check that cannot fail is worse than no check, because it
+      # buys false confidence. Assert the paths first, loudly.
+      - name: 'preflight — the paths these checks scan actually exist'
+        run: |
+          missing=0
+          for p in docs docs/assets \
+                   api/src api/scripts \
+                   api/scripts/build-templates.mjs \
+                   api/src/lib/brokers.js api/src/lib/templates.js \
+                   api/src/routes/intake.js api/src/routes/sweep.js \
+                   api/src/routes/dossier.js api/src/routes/demand.js \
+                   api/src/routes/evidence.js api/src/routes/donate.js \
+                   legal/DISCLAIMER.md legal/templates; do
+            if [ ! -e "$p" ]; then
+              echo "::error::missing path: $p — an invariant check below would silently scan nothing. If this file moved, repoint the check in this workflow; do not delete the check."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "OK — every scanned path is present."
+
       # ── R1 — No Social Security Numbers, ever ───────────────────────────────
       # A public repo that collects SSNs behind a dramatic UI is a phishing kit,
       # regardless of intent. The only permitted matches are the intake
-      # REJECTION logic in worker/src/routes/intake.js.
+      # REJECTION logic in api/src/routes/intake.js.
       - name: 'R1 — no SSN collection'
         run: |
           echo "Scanning for SSN input fields..."
-          if grep -rniE '<input[^>]*ssn|name=["'"'"']?ssn|social_security|ssn_' docs/ worker/src/ \
+          if grep -rniE '<input[^>]*ssn|name=["'"'"']?ssn|social_security|ssn_' docs/ api/src/ \
                --exclude=intake.js; then
             echo "::error::R1 VIOLATION — an SSN field was introduced. See DESIGN.md §1 R1."
             exit 1
@@ -55,12 +87,12 @@ jobs:
       - name: 'R3 — verified-self gate intact'
         run: |
           for r in sweep dossier demand evidence donate; do
-            if ! grep -q 'requireSession(request, env)' "worker/src/routes/$r.js"; then
-              echo "::error::R3 VIOLATION — worker/src/routes/$r.js does not gate on requireSession(). See DESIGN.md §1 R3."
+            if ! grep -q 'requireSession' "api/src/routes/$r.js"; then
+              echo "::error::R3 VIOLATION — api/src/routes/$r.js does not gate on requireSession(). See DESIGN.md §1 R3."
               exit 1
             fi
           done
-          if grep -rniE 'skipauth|allowUnverified|NO_AUTH|DEBUG_SKIP' worker/src/ --include='*.js' \
+          if grep -rniE 'skipauth|allowUnverified|NO_AUTH|DEBUG_SKIP' api/src/ --include='*.js' \
                | grep -v '^\S*:[0-9]*: *[/*]'; then
             echo "::error::R3 VIOLATION — an auth bypass was introduced."
             exit 1
@@ -72,33 +104,52 @@ jobs:
       # crawl over a person's name is a different product with a different name.
       - name: 'R4 — allowlist validator present'
         run: |
-          if ! grep -q 'assertAllowlistedUrl' worker/src/brokers.js; then
-            echo "::error::R4 VIOLATION — the allowlist validator is missing from brokers.js."
+          if ! grep -q 'assertAllowlistedUrl' api/src/lib/brokers.js; then
+            echo "::error::R4 VIOLATION — the allowlist validator is missing from api/src/lib/brokers.js."
             exit 1
           fi
-          if ! grep -q 'assertAllowlistedUrl' worker/src/routes/sweep.js; then
-            echo "::error::R4 VIOLATION — sweep.js no longer validates URLs against the allowlist."
+          if ! grep -q 'assertAllowlistedUrl' api/src/routes/sweep.js; then
+            echo "::error::R4 VIOLATION — api/src/routes/sweep.js no longer validates URLs against the allowlist."
             exit 1
           fi
           echo "OK — allowlist enforced at definition and call site."
 
       # ── Generated templates must match legal/ ───────────────────────────────
       # legal/templates/*.md is reviewed as legal text and is canonical.
-      # worker/src/templates.js is a build artifact. If they drift, the deployed
+      # api/src/lib/templates.js is a build artifact. If they drift, the deployed
       # letters stop matching the reviewed text — which is how a project like
       # this ends up mailing a citation nobody approved.
       - name: 'templates match legal/ source of truth'
         run: |
-          node worker/scripts/build-templates.mjs
-          if ! git diff --quiet -- worker/src/templates.js; then
-            echo "::error::worker/src/templates.js is stale. Run: node worker/scripts/build-templates.mjs"
-            git diff --stat -- worker/src/templates.js
+          node api/scripts/build-templates.mjs
+          if ! git diff --quiet -- api/src/lib/templates.js; then
+            echo "::error::api/src/lib/templates.js is stale. Run: node api/scripts/build-templates.mjs"
+            git diff --stat -- api/src/lib/templates.js
             exit 1
           fi
           echo "OK — generated templates match legal/."
 
+      # ── Everything parses ───────────────────────────────────────────────────
+      # `node --check` picks CJS-vs-ESM from the nearest package.json, which
+      # makes it quietly path-sensitive. docs/assets/*.js are classic browser
+      # scripts and are checked in place, exactly as a browser would see them.
+      # api/**.js is ESM, so each file is probed through a .mjs copy — that way
+      # the check does not depend on api/package.json already declaring
+      # "type": "module", and cannot start passing-by-accident if it stops.
       - name: 'JavaScript parses'
         run: |
-          find worker/src worker/scripts docs/assets -name '*.js' -o -name '*.mjs' \
-            | while read -r f; do node --check "$f" || exit 1; done
+          probe="$(mktemp -d)"
+          for f in $(find api/src api/scripts \( -name '*.js' -o -name '*.mjs' \)); do
+            cp "$f" "$probe/probe.mjs"
+            if ! node --check "$probe/probe.mjs"; then
+              echo "::error file=$f::does not parse as an ES module"
+              exit 1
+            fi
+          done
+          for f in $(find docs/assets -name '*.js'); do
+            if ! node --check "$f"; then
+              echo "::error file=$f::does not parse as a browser script"
+              exit 1
+            fi
+          done
           echo "OK — all JS parses."

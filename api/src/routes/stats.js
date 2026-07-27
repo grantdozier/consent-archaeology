@@ -5,13 +5,14 @@
 // re-identify a subject. If a future feature wants richer public stats, it
 // does not go in this file without a privacy review.
 
-import { json } from '../http.js';
-import { BROKERS } from '../brokers.js';
+import { json } from '../lib/http.js';
+import { BROKERS } from '../lib/brokers.js';
+import * as repo from '../lib/repo.js';
 
-export async function getStats(request, env) {
+export async function getStats() {
   const [demands, verified] = await Promise.all([
-    env.DB.prepare('SELECT COUNT(*) AS n FROM demands').first(),
-    env.DB.prepare('SELECT COUNT(*) AS n FROM subjects WHERE verified_at IS NOT NULL').first(),
+    repo.countAllDemands(),
+    repo.countVerifiedSubjects(),
   ]);
   return json({
     // DRAFTED, not sent, and not filed. This service never transmits a
@@ -21,8 +22,8 @@ export async function getStats(request, env) {
     // way to know how many were actually sent, and claiming otherwise
     // would be exactly the kind of unearned number this project exists
     // to object to. Renamed from `demandsSent` for that reason.
-    demandsDrafted: demands.n,
-    subjectsVerified: verified.n,
+    demandsDrafted: demands,
+    subjectsVerified: verified,
     brokersCovered: BROKERS.length,
   });
 }

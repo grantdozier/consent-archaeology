@@ -153,17 +153,24 @@ activity shutoff, and an incident neither party could ever locate the source of.
 
 ## Run it yourself
 
-Static frontend, one Cloudflare Worker, ~$0/month. No framework, no build step, no npm
-runtime dependencies. It's a terminal made of divs.
+Static frontend on GitHub Pages, one Azure Function App behind it, ~$0/month. No
+framework, no build step, no npm runtime dependencies on the frontend. It's a terminal
+made of divs.
+
+The backend is Azure Functions (Node 22, Linux, Consumption) on top of a Cosmos DB
+free-tier account — 1000 RU/s and 25 GB, permanently, one per subscription. Cosmos is
+there for one unglamorous feature: **document TTL**. Magic-link tokens, session tokens
+and rate-limit counters expire on their own, which means the security-critical thing
+that has to happen on time doesn't depend on us remembering to schedule it.
 
 ```bash
 git clone https://github.com/grantdozier/consent-archaeology
 cd consent-archaeology
 # frontend: it's static. open docs/index.html.
 # backend:
-cd worker && npm i -g wrangler   # needs Node >= 22
-wrangler d1 create consent_archaeology
-wrangler deploy
+cd api && npm i                            # needs Node >= 22
+cp local.settings.json.example local.settings.json   # then fill it in; it's gitignored
+func start                                 # Azure Functions Core Tools v4
 ```
 
 Full instructions, including every secret you need and where to put it, in

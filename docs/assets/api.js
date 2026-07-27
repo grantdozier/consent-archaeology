@@ -10,10 +10,16 @@
 
 'use strict';
 
-// TODO(deploy): confirm this matches the deployed Worker URL, or swap to a
-// custom route (e.g. https://dig-api.doziertechgroup.com) once DNS is set.
-// This const is the single source of truth for the API origin.
-const API_BASE = 'https://dig-api.doziertechgroup.workers.dev';
+// The Azure Function App's default hostname. This const is the single source of
+// truth for the API origin — nothing else in the frontend hardcodes it.
+//
+// Deliberately NOT a custom subdomain. Pointing dig-api.doziertechgroup.com here
+// would mean a CNAME plus an asuid TXT record in the CLOUDFLARE dashboard (the
+// domain is authoritative on jonah/chin.ns.cloudflare.com; there are no Azure DNS
+// zones), then a managed certificate and a custom-domain binding on the app. If
+// that ever happens, change this one line and add ALLOWED_ORIGIN accordingly —
+// see DEPLOY.md.
+const API_BASE = 'https://func-consent-archaeology.azurewebsites.net';
 
 // How long to wait before giving up on a request. Generous enough for a cold
 // Worker start on a slow phone connection, short enough that a dead backend

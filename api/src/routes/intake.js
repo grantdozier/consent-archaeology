@@ -7,17 +7,20 @@
 // This is a public repo that collects PII behind a dramatic "classified"
 // UI. If it accepted Social Security Numbers — even optionally, even
 // "just the last 4" — it would be structurally indistinguishable from a
-// phishing kit, regardless of intent. So there is no SSN column in the
-// schema, no SSN field in this handler, and any request that even
+// phishing kit, regardless of intent. So there is no SSN field in the
+// document schema, no SSN field in this handler, and any request that even
 // *carries* an SSN-like key or value is rejected with a 400 before we
 // process anything else. Brokers key on name + address history + email +
 // phone; an SSN is never needed to find or demand deletion of a record.
 // If a user is worried about SSN exposure, the real fix is a credit
 // freeze (free, statutory, works) — the error message says so.
 
-import { HttpError, json, readJson, nowISO } from '../http.js';
-import { encryptPII, decryptPII, saltedHash, uuid } from '../crypto.js';
-import { issueMagicToken, sendMagicLinkEmail, requireSession } from '../auth.js';
+import { HttpError, json, readJson, nowISO } from '../lib/http.js';
+import { encryptPII, decryptPII, saltedHash, uuid } from '../lib/crypto.js';
+import { issueMagicToken, sendMagicLinkEmail, requireSession } from '../lib/auth.js';
+import { config } from '../lib/config.js';
+import * as sessions from '../lib/sessions.js';
+import * as repo from '../lib/repo.js';
 
 const MAGIC_EMAILS_PER_HOUR = 5; // per email address — anti email-bombing
 
@@ -110,7 +113,7 @@ function validateIntake(body) {
 
 // --- POST /api/intake --------------------------------------------------------
 
-export async function postIntake(request, env) {
+export async function postIntake(request) {
   const body = await readJson(request);
 
   // R1 gate — before validation, before anything. See file-header comment.
@@ -119,45 +122,46 @@ export async function postIntake(request, env) {
   }
 
   const pii = validateIntake(body);
-  const emailHash = await saltedHash(env, pii.email);
+  const emailHash = await saltedHash(config, pii.email);
 
-  // Rate-limit magic-link emails per address (KV counter) so this endpoint
-  // can't be used to bomb someone's inbox.
+  // Rate-limit magic-link emails per address (sessions counter) so this
+  // endpoint can't be used to bomb someone's inbox.
   const rlKey = `rl:magic:${emailHash}`;
-  const sent = parseInt((await env.SESSIONS.get(rlKey)) || '0', 10);
+  const sent = parseInt((await sessions.get(rlKey)) || '0', 10);
   if (sent >= MAGIC_EMAILS_PER_HOUR) {
     throw new HttpError(429, 'rate_limited: too many verification emails — try again in an hour');
   }
 
   const now = nowISO();
-  const ciphertext = await encryptPII(env, JSON.stringify(pii));
+  const ciphertext = await encryptPII(config, JSON.stringify(pii));
 
-  // Dedup on the salted email hash (R5): same email → same subject row,
-  // PII refreshed. A previously purged subject re-activates.
-  const existing = await env.DB.prepare('SELECT id FROM subjects WHERE email_hash = ?')
-    .bind(emailHash).first();
+  // Dedup on the salted email hash (R5): same email → same subject document,
+  // PII refreshed. A previously purged subject re-activates (updateSubjectPii
+  // clears purgedAt).
+  const existing = await repo.findIdByEmailHash(emailHash);
 
   let subjectId;
   if (existing) {
     subjectId = existing.id;
-    await env.DB.prepare(
-      'UPDATE subjects SET pii_ciphertext = ?, last_activity_at = ?, purged_at = NULL WHERE id = ?',
-    ).bind(ciphertext, now, subjectId).run();
+    await repo.updateSubjectPii(subjectId, ciphertext, now);
   } else {
     subjectId = uuid();
-    await env.DB.prepare(
-      `INSERT INTO subjects (id, email_hash, pii_ciphertext, created_at, last_activity_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).bind(subjectId, emailHash, ciphertext, now, now).run();
+    await repo.createSubject({
+      id: subjectId,
+      emailHash,
+      piiCiphertext: ciphertext,
+      createdAt: now,
+      lastActivityAt: now,
+    });
   }
 
   // R3: nothing works without the magic-link round trip. Send it via Brevo.
   // If Brevo fails, sendMagicLinkEmail THROWS and the client gets a real
   // error — we never answer verificationSent:true unless Brevo accepted the
   // message (house rule: never fake success).
-  const token = await issueMagicToken(env, subjectId);
-  await sendMagicLinkEmail(env, pii.email, token);
-  await env.SESSIONS.put(rlKey, String(sent + 1), { expirationTtl: 3600 });
+  const token = await issueMagicToken(config, subjectId);
+  await sendMagicLinkEmail(config, pii.email, token);
+  await sessions.put(rlKey, String(sent + 1), 3600);
 
   return json({ subjectId, verificationSent: true });
 }
@@ -167,18 +171,18 @@ export async function postIntake(request, env) {
 // the authenticated subject (decrypted), then hard-deletes all of it and kills
 // the session. The response body IS the export — save it, it's gone after this.
 
-export async function postExportAndDelete(request, env) {
-  const { subjectId, sessionToken } = await requireSession(request, env);
+export async function postExportAndDelete(request) {
+  const { subjectId, sessionToken } = await requireSession(request); // R3 gate
 
-  const subject = await env.DB.prepare('SELECT * FROM subjects WHERE id = ?')
-    .bind(subjectId).first();
+  const subject = await repo.getSubject(subjectId);
   if (!subject) throw new HttpError(404, 'subject_not_found');
+  const piiCiphertext = await repo.getSubjectPii(subjectId); // null once purged
 
   const [sweeps, findings, demands, evidence] = await Promise.all([
-    env.DB.prepare('SELECT * FROM sweeps WHERE subject_id = ? ORDER BY created_at').bind(subjectId).all(),
-    env.DB.prepare('SELECT * FROM findings WHERE subject_id = ? ORDER BY created_at').bind(subjectId).all(),
-    env.DB.prepare('SELECT * FROM demands WHERE subject_id = ? ORDER BY created_at').bind(subjectId).all(),
-    env.DB.prepare('SELECT * FROM evidence WHERE subject_id = ? ORDER BY seq').bind(subjectId).all(),
+    repo.listSweepsBySubject(subjectId),
+    repo.listFindingsBySubject(subjectId),
+    repo.listDemandsBySubject(subjectId),
+    repo.listEvidenceBySubject(subjectId),
   ]);
 
   const exportPayload = {
@@ -186,42 +190,46 @@ export async function postExportAndDelete(request, env) {
     note: 'Complete export of everything CONSENT ARCHAEOLOGY held about this subject. All copies on our side were deleted when this export was generated.',
     subject: {
       id: subject.id,
-      createdAt: subject.created_at,
-      verifiedAt: subject.verified_at,
-      pii: subject.pii_ciphertext ? JSON.parse(await decryptPII(env, subject.pii_ciphertext)) : null,
+      createdAt: subject.createdAt,
+      verifiedAt: subject.verifiedAt || null,
+      pii: piiCiphertext ? JSON.parse(await decryptPII(config, piiCiphertext)) : null,
     },
-    sweeps: sweeps.results.map((s) => ({
+    sweeps: sweeps.map((s) => ({
       id: s.id, status: s.status, total: s.total, done: s.done,
-      createdAt: s.created_at, completedAt: s.completed_at,
+      createdAt: s.createdAt, completedAt: s.completedAt || null,
     })),
-    findings: findings.results.map((f) => ({
-      id: f.id, sweepId: f.sweep_id, brokerId: f.broker_id, status: f.status,
-      matched: !!f.matched, publishedFields: JSON.parse(f.published_fields), createdAt: f.created_at,
+    findings: findings.map((f) => ({
+      id: f.id, sweepId: f.sweepId, brokerId: f.brokerId, status: f.status,
+      matched: !!f.matched, publishedFields: f.publishedFields || [], createdAt: f.createdAt,
     })),
-    demands: await Promise.all(demands.results.map(async (d) => ({
-      id: d.id, findingId: d.finding_id, type: d.type, createdAt: d.created_at,
-      letterHash: d.letter_hash,
-      letterMarkdown: d.letter_ciphertext ? await decryptPII(env, d.letter_ciphertext) : null,
+    demands: await Promise.all(demands.map(async (d) => ({
+      id: d.id, findingId: d.findingId, type: d.type, createdAt: d.createdAt,
+      letterHash: d.letterHash,
+      letterMarkdown: d.letterCiphertext ? await decryptPII(config, d.letterCiphertext) : null,
     }))),
-    evidence: await Promise.all(evidence.results.map(async (e) => ({
+    evidence: await Promise.all(evidence.map(async (e) => ({
       id: e.id, seq: e.seq, company: e.company, element: e.element,
-      narrative: e.narrative_ciphertext ? await decryptPII(env, e.narrative_ciphertext) : null,
-      occurredAt: e.occurred_at, createdAt: e.created_at,
-      prevHash: e.prev_hash, hash: e.hash,
+      narrative: e.narrativeCiphertext ? await decryptPII(config, e.narrativeCiphertext) : null,
+      occurredAt: e.occurredAt, createdAt: e.createdAt,
+      prevHash: e.prevHash, hash: e.hash,
     }))),
   };
 
   // Hard delete, children first. This is a real deletion of our copies — which
   // is exactly what we say. It is NOT "erasing you from the internet" (R2);
   // the brokers still hold what they hold until they honor the demands.
-  await env.DB.batch([
-    env.DB.prepare('DELETE FROM evidence WHERE subject_id = ?').bind(subjectId),
-    env.DB.prepare('DELETE FROM demands WHERE subject_id = ?').bind(subjectId),
-    env.DB.prepare('DELETE FROM findings WHERE subject_id = ?').bind(subjectId),
-    env.DB.prepare('DELETE FROM sweeps WHERE subject_id = ?').bind(subjectId),
-    env.DB.prepare('DELETE FROM subjects WHERE id = ?').bind(subjectId),
-  ]);
-  await env.SESSIONS.delete(`session:${sessionToken}`);
+  //
+  // The Worker did this as one D1 batch. Cosmos has no cross-container
+  // transaction, so these run sequentially. Children first means a failure
+  // part-way can never leave orphaned child documents pointing at a subject
+  // that no longer exists — and the export above has already been built, so
+  // the caller still gets their data even if a delete step throws.
+  await repo.deleteEvidenceBySubject(subjectId);
+  await repo.deleteDemandsBySubject(subjectId);
+  await repo.deleteFindingsBySubject(subjectId);
+  await repo.deleteSweepsBySubject(subjectId);
+  await repo.deleteSubject(subjectId);
+  await sessions.del(`session:${sessionToken}`);
 
   return json(exportPayload, 200, {
     'content-disposition': 'attachment; filename="consent-archaeology-export.json"',

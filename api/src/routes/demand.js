@@ -12,16 +12,19 @@
 // anyone will (or can) erase anything from the internet.
 //
 // TEMPLATES: the letter text lives in legal/templates/*.md — reviewed as legal
-// text, and canonical. Workers can't read repo files at runtime, so
-// worker/src/templates.js is GENERATED from legal/ by
-// `node worker/scripts/build-templates.mjs`. Never edit that artifact; edit the
-// markdown and regenerate. CI fails if the two drift.
+// text, and canonical. The Function App ships a generated module rather than
+// reading repo files at runtime, so api/src/lib/templates.js is GENERATED from
+// legal/ by `node api/scripts/build-templates.mjs`. Never edit that artifact;
+// edit the markdown and regenerate. CI fails if the two drift
+// (.github/workflows/invariants.yml).
 
-import { HttpError, json, readJson, nowISO } from '../http.js';
-import { encryptPII, decryptPII, sha256Hex, uuid } from '../crypto.js';
-import { requireSession } from '../auth.js';
-import { brokerById } from '../brokers.js';
-import { TEMPLATES } from '../templates.js';
+import { HttpError, json, readJson, nowISO } from '../lib/http.js';
+import { encryptPII, decryptPII, sha256Hex, uuid } from '../lib/crypto.js';
+import { requireSession } from '../lib/auth.js';
+import { config } from '../lib/config.js';
+import { brokerById } from '../lib/brokers.js';
+import { TEMPLATES } from '../lib/templates.js';
+import * as repo from '../lib/repo.js';
 
 const VALID_TYPES = ['rtk', 'disclosure', 'delete', 'provenance', 'gdpr'];
 
@@ -90,8 +93,8 @@ function unverified(what, where) {
   return `[${what} — UNVERIFIED, confirm before sending; see ${where}]`;
 }
 
-export async function postDemand(request, env) {
-  const { subjectId } = await requireSession(request, env); // R3 gate
+export async function postDemand(request) {
+  const { subjectId } = await requireSession(request); // R3 gate
   const body = await readJson(request);
 
   const type = body.type;
@@ -102,21 +105,18 @@ export async function postDemand(request, env) {
   if (!findingId) throw new HttpError(400, 'invalid_findingId');
 
   // Ownership check: the finding must belong to THIS subject (R3 — you generate
-  // demands about your own dossier only). 404 rather than 403, so finding ids
-  // can't be probed for existence.
-  const finding = await env.DB.prepare(
-    'SELECT * FROM findings WHERE id = ? AND subject_id = ?',
-  ).bind(findingId, subjectId).first();
+  // demands about your own dossier only). The repo reads it from the caller's
+  // own partition, so someone else's finding is simply absent → 404 rather
+  // than 403, so finding ids can't be probed for existence.
+  const finding = await repo.getOwnedFinding(findingId, subjectId);
   if (!finding) throw new HttpError(404, 'finding_not_found');
 
-  const broker = brokerById(finding.broker_id);
+  const broker = brokerById(finding.brokerId);
   if (!broker) throw new HttpError(500, 'broker_no_longer_on_allowlist');
 
-  const subjRow = await env.DB.prepare(
-    'SELECT pii_ciphertext FROM subjects WHERE id = ? AND purged_at IS NULL',
-  ).bind(subjectId).first();
-  if (!subjRow || !subjRow.pii_ciphertext) throw new HttpError(404, 'subject_pii_unavailable');
-  const pii = JSON.parse(await decryptPII(env, subjRow.pii_ciphertext));
+  const piiCiphertext = await repo.getSubjectPii(subjectId); // null once purged
+  if (!piiCiphertext) throw new HttpError(404, 'subject_pii_unavailable');
+  const pii = JSON.parse(await decryptPII(config, piiCiphertext));
 
   // ── Jurisdiction ─────────────────────────────────────────────────────────
   // Decides which IF: blocks survive. The templates require at least one active
@@ -150,8 +150,8 @@ export async function postDemand(request, env) {
       : '(none provided)',
     STATE_OF_RESIDENCE: pii.state || '(not provided)',
 
-    COMPANY_LEGAL_NAME: broker.legalName || unverified('LEGAL ENTITY NAME', 'worker/src/brokers.js'),
-    COMPANY_ADDRESS: broker.hqAddress || unverified('MAILING ADDRESS', 'worker/src/brokers.js'),
+    COMPANY_LEGAL_NAME: broker.legalName || unverified('LEGAL ENTITY NAME', 'api/src/lib/brokers.js'),
+    COMPANY_ADDRESS: broker.hqAddress || unverified('MAILING ADDRESS', 'api/src/lib/brokers.js'),
 
     REQUEST_DATE: new Date().toISOString().slice(0, 10),
     RESPONSE_DEADLINE: addDays(gdprOnly ? DAYS_RESPONSE_GDPR : DAYS_RESPONSE_US),
@@ -170,13 +170,15 @@ export async function postDemand(request, env) {
   // Stored encrypted (the letter carries the subject's name and contact —
   // R5, R7). The hash outlives the 90-day purge, so a copy the user kept stays
   // provably the document we generated.
-  await env.DB.prepare(
-    `INSERT INTO demands (id, subject_id, finding_id, type, letter_ciphertext, letter_hash, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).bind(
-    demandId, subjectId, findingId, type,
-    await encryptPII(env, letterMarkdown), letterHash, nowISO(),
-  ).run();
+  await repo.createDemand({
+    id: demandId,
+    subjectId,
+    findingId,
+    type,
+    letterCiphertext: await encryptPII(config, letterMarkdown),
+    letterHash,
+    createdAt: nowISO(),
+  });
 
   return json({ demandId, letterMarkdown });
 }

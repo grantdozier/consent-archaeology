@@ -1,0 +1,134 @@
+# Deploys api/ to the Azure Function App `func-consent-archaeology`.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# THE ONE SECRET THIS NEEDS, AND HOW GRANT CREATES IT
+# ─────────────────────────────────────────────────────────────────────────────
+# This workflow authenticates with a *publish profile* — an XML blob containing
+# deployment credentials for the Function App. It is the only secret referenced
+# here. Its name is `AZURE_FUNCTIONAPP_PUBLISH_PROFILE` and nothing else.
+#
+#   1. Publish profiles are basic-auth credentials, and Azure now ships new
+#      Function Apps with basic SCM auth DISABLED. Turn it on for the SCM
+#      endpoint first, or step 2 returns an empty/erroring profile:
+#
+#        az resource update \
+#          --resource-group rg-consent-archaeology \
+#          --namespace Microsoft.Web \
+#          --resource-type basicPublishingCredentialsPolicies \
+#          --name scm --parent sites/func-consent-archaeology \
+#          --set properties.allow=true
+#
+#   2. Print the profile (this writes secrets to your terminal — do not paste
+#      the output into a chat, an issue, or this repo):
+#
+#        az functionapp deployment list-publishing-profiles \
+#          --name func-consent-archaeology \
+#          --resource-group rg-consent-archaeology \
+#          --xml
+#
+#   3. GitHub → the repo → Settings → Secrets and variables → Actions →
+#      "New repository secret".
+#        Name:   AZURE_FUNCTIONAPP_PUBLISH_PROFILE
+#        Value:  the ENTIRE XML from step 2, starting at `<publishData>` and
+#                ending at `</publishData>`. All of it, whitespace included.
+#
+#   4. Rotating it later: re-run step 2 after
+#      `az functionapp deployment list-publishing-profiles ... --xml` and update
+#      the secret. Resetting publish credentials in the portal invalidates the
+#      old profile, so the secret must be updated in the same sitting or deploys
+#      start failing.
+#
+# App settings (COSMOS_KEY, PII_ENCRYPTION_KEY, BREVO_API_KEY, …) are NOT set
+# here. They live in Azure App Settings and are set once from DEPLOY.md §4. A
+# deploy never touches them, so a bad merge cannot rotate an encryption key and
+# make every stored PII record unreadable.
+
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - '.github/workflows/deploy-api.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time. Let an in-flight publish finish rather than racing a
+# second zip upload against it.
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+env:
+  AZURE_FUNCTIONAPP_NAME: func-consent-archaeology
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: api
+  NODE_VERSION: '22'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Node 22 here must match the Function App's runtime (Node 22, Linux).
+      # If they drift, you find out at cold start in production instead of here.
+      - name: Set up Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # legal/ is the source of truth for every generated letter (R6). If the
+      # committed artifact has drifted from legal/, this deploy would ship
+      # letters carrying text nobody reviewed — so it stops here instead.
+      - name: Generated letter templates are current
+        run: |
+          node api/scripts/build-templates.mjs
+          if ! git diff --quiet -- api/src/lib/templates.js; then
+            echo "::error::api/src/lib/templates.js is stale. Run: node api/scripts/build-templates.mjs — then commit the result."
+            exit 1
+          fi
+
+      # Dependencies are installed here and shipped inside the zip, rather than
+      # built remotely by Oryx. Consumption-plan remote builds are the usual
+      # source of "worked in CI, 500s in prod" — this keeps the artifact that
+      # was tested identical to the artifact that runs.
+      - name: Install production dependencies
+        working-directory: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --omit=dev
+          else
+            npm install --omit=dev
+          fi
+
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+
+      # A green deploy step means "the zip uploaded", not "the app works".
+      # /api/stats is public, aggregate-only (R5), and touches Cosmos — so a 200
+      # here proves the runtime booted and its config is real. Anything else is
+      # a failed deploy that merely looked successful, which is the one outcome
+      # this project does not tolerate.
+      - name: Smoke test — /api/stats answers
+        run: |
+          url="https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/stats"
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /tmp/stats.json -w '%{http_code}' --max-time 20 "$url" || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "OK — $url returned 200"
+              cat /tmp/stats.json
+              exit 0
+            fi
+            echo "attempt $i: HTTP $code (cold start can take a moment) — retrying in 15s"
+            sleep 15
+          done
+          echo "::error::$url did not return 200 after the deploy. The zip uploaded but the app is not serving. Check: az functionapp log tail -n ${{ env.AZURE_FUNCTIONAPP_NAME }} -g rg-consent-archaeology"
+          exit 1

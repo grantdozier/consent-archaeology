@@ -1,45 +1,76 @@
 // auth.js — the R3 gate. Read this comment before touching anything below.
 //
 // ┌──────────────────────────────────────────────────────────────────────────┐
-// │ R3 — VERIFIED-SELF ONLY. THIS IS THE ANTI-DOXING CONTROL.               │
+// │ R3 — VERIFIED-SELF ONLY. THIS IS THE ANTI-DOXING CONTROL.                │
 // │                                                                          │
-// │ A sweep may only run against an identity whose email was verified in    │
-// │ this session by clicking a Brevo magic link. Without this gate, a       │
-// │ public repo + "give me a name and I'll find everything about them" is a │
-// │ stalking tool with a nice UI. With it, it's a privacy tool. The entire  │
-// │ ethical difference is this one email round-trip.                        │
+// │ A sweep may only run against an identity whose email was verified in     │
+// │ this session by clicking a Brevo magic link. Without this gate, a        │
+// │ public repo + "give me a name and I'll find everything about them" is a  │
+// │ stalking tool with a nice UI. With it, it's a privacy tool. The entire   │
+// │ ethical difference is this one email round-trip.                         │
 // │                                                                          │
-// │ Invariants (grep-able, enforce in review):                              │
-// │   1. `session:` KV keys are written in EXACTLY ONE place:               │
-// │      verifyMagicTokenAndStartSession(), below — which requires a valid  │
-// │      single-use magic token that was emailed to the subject.            │
-// │   2. There is NO admin bypass, NO env-var override, NO debug flag, NO   │
-// │      "research mode". Do not add one. A PR adding one is a doxing       │
-// │      engine PR and gets closed.                                         │
-// │   3. requireSession() is the only door into every /api route that       │
-// │      touches a subject. It accepts a bearer token or nothing.           │
+// │ Invariants (grep-able, enforce in review):                               │
+// │   1. `session:` keys are written in EXACTLY ONE place:                   │
+// │      verifyMagicTokenAndStartSession(), below — which requires a valid   │
+// │      single-use magic token that was emailed to the subject. The port    │
+// │      makes this enforceable at runtime, not just in review:              │
+// │      sessions.put() REFUSES a `session:` key outright, and the only      │
+// │      writer is sessions.putSessionTokenR3Only(), whose single call site  │
+// │      in the entire repo is the one below. Checkable invariant — this     │
+// │      must return exactly ONE line, in this file:                         │
+// │                                                                          │
+// │        grep -rnE '^\s*await sessions\.putSessionTokenR3Only\(' \         │
+// │             api/src --include=*.js                                       │
+// │                                                                          │
+// │      A second call site is a bug report, not a feature.                  │
+// │   2. There is NO admin bypass, NO env-var override, NO debug flag, NO    │
+// │      "research mode". Do not add one. A PR adding one is a doxing        │
+// │      engine PR and gets closed. The move to Azure changed the storage    │
+// │      engine and nothing else about this rule.                            │
+// │   3. requireSession() is the only door into every /api route that        │
+// │      touches a subject. It accepts a bearer token or nothing.            │
 // └──────────────────────────────────────────────────────────────────────────┘
+//
+// Port note: the Worker took `env` as an explicit parameter. Azure has no such
+// object, so these read App Settings from config.js. The (env, …) signatures
+// are preserved for call-site familiarity and may be called with the env
+// omitted — `issueMagicToken(subjectId)` and `issueMagicToken(config,
+// subjectId)` are equivalent. ES modules, Node 22.
 
 import { HttpError, nowISO } from './http.js';
 import { randomToken } from './crypto.js';
+import { config } from './config.js';
+import * as sessions from './sessions.js';
+import * as repo from './repo.js';
 
 const MAGIC_TOKEN_TTL_SECONDS = 15 * 60;    // magic links die in 15 minutes
 const SESSION_TTL_SECONDS = 24 * 60 * 60;   // sessions die in 24 hours
+
+/**
+ * Argument shim for the preserved (env, …) signatures: `env` is never a string,
+ * so a lone leading string means the env was omitted.
+ */
+function shift(env, value) {
+  return value === undefined && typeof env === 'string'
+    ? { env: config, value: env }
+    : { env: env || config, value };
+}
 
 // ---------------------------------------------------------------------------
 // Magic-link issue (called from intake)
 // ---------------------------------------------------------------------------
 
 /**
- * Mint a single-use magic token for a subject and stash it in KV with a short
- * TTL. The token is only ever transmitted inside the verification email.
+ * Mint a single-use magic token for a subject and stash it with a short TTL.
+ * The token is only ever transmitted inside the verification email.
  */
 export async function issueMagicToken(env, subjectId) {
+  ({ value: subjectId } = shift(env, subjectId));
   const token = randomToken(32);
-  await env.SESSIONS.put(
+  await sessions.put(
     `magic:${token}`,
     JSON.stringify({ subjectId, issuedAt: nowISO() }),
-    { expirationTtl: MAGIC_TOKEN_TTL_SECONDS },
+    MAGIC_TOKEN_TTL_SECONDS,
   );
   return token;
 }
@@ -48,8 +79,8 @@ export async function issueMagicToken(env, subjectId) {
  * Send the verification email via Brevo transactional API.
  *
  * Sender domain must be verified in Brevo (DKIM/SPF records added in the
- * Cloudflare DNS dashboard for doziertechgroup.com) or Brevo will refuse or
- * spam-folder these. See wrangler.toml TODO(deploy).
+ * CLOUDFLARE DNS dashboard for doziertechgroup.com — DNS did not move to Azure
+ * and cannot) or Brevo will refuse or spam-folder these.
  *
  * HONESTY (house rule #1 — never fake success): if Brevo does not accept the
  * message we THROW. The caller must not tell the user "verification sent"
@@ -57,20 +88,27 @@ export async function issueMagicToken(env, subjectId) {
  * response body — Brevo error bodies can echo the recipient address (R5).
  */
 export async function sendMagicLinkEmail(env, recipientEmail, token) {
-  if (!env.BREVO_API_KEY) {
-    throw new HttpError(500, 'server_misconfigured: BREVO_API_KEY secret is not set');
+  // Accept both (env, recipientEmail, token) and (recipientEmail, token).
+  if (token === undefined && typeof env === 'string') {
+    token = recipientEmail;
+    recipientEmail = env;
+    env = null;
   }
-  const verifyUrl = `${env.PUBLIC_APP_URL}/verify.html?token=${token}`;
+  const cfg = env || config;
+  if (!cfg.BREVO_API_KEY) {
+    throw new HttpError(500, 'server_misconfigured: BREVO_API_KEY is not set');
+  }
+  const verifyUrl = `${cfg.PUBLIC_APP_URL}/verify.html?token=${token}`;
 
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
-      'api-key': env.BREVO_API_KEY,
+      'api-key': cfg.BREVO_API_KEY,
       'content-type': 'application/json',
       accept: 'application/json',
     },
     body: JSON.stringify({
-      sender: { name: env.SENDER_NAME || 'CONSENT ARCHAEOLOGY', email: env.SENDER_EMAIL },
+      sender: { name: cfg.SENDER_NAME || 'CONSENT ARCHAEOLOGY', email: cfg.SENDER_EMAIL },
       to: [{ email: recipientEmail }],
       subject: 'CLEARANCE VERIFICATION — one click required',
       // Theater in the subject line, truth in the body (DESIGN §3).
@@ -114,35 +152,44 @@ export async function sendMagicLinkEmail(env, recipientEmail, token) {
  * THE ONLY FUNCTION IN THIS CODEBASE THAT CREATES A SESSION. (R3 invariant 1.)
  * Consumes the single-use magic token, stamps the subject verified, and mints
  * a bearer session token.
+ *
+ * The magic token's expiry is enforced by sessions.get(), which compares the
+ * stored expiresAt itself rather than trusting Cosmos TTL sweeping — an expired
+ * link must stop working at its expiry second, not whenever the sweeper runs.
  */
 export async function verifyMagicTokenAndStartSession(env, token) {
+  ({ value: token } = shift(env, token));
   if (!token || typeof token !== 'string' || token.length < 20) {
     throw new HttpError(400, 'invalid_token');
   }
   const key = `magic:${token}`;
-  const raw = await env.SESSIONS.get(key);
+  const raw = await sessions.get(key);
   if (!raw) {
     throw new HttpError(400, 'invalid_or_expired_token: request a new link from the intake form');
   }
   // Single-use: burn it before doing anything else.
-  await env.SESSIONS.delete(key);
+  await sessions.del(key);
 
-  const { subjectId } = JSON.parse(raw);
+  let subjectId;
+  try {
+    ({ subjectId } = JSON.parse(raw));
+  } catch {
+    throw new HttpError(400, 'invalid_or_expired_token: request a new link from the intake form');
+  }
+
   const now = nowISO();
-  const result = await env.DB.prepare(
-    `UPDATE subjects
-        SET verified_at = COALESCE(verified_at, ?), last_activity_at = ?
-      WHERE id = ? AND purged_at IS NULL`,
-  ).bind(now, now, subjectId).run();
-  if (!result.meta || result.meta.changes === 0) {
+  // verifiedAt = COALESCE(verifiedAt, now); lastActivityAt = now; purged rows
+  // and vanished rows both come back false, exactly like D1's changes === 0.
+  const stamped = await repo.markVerified(subjectId, now);
+  if (!stamped) {
     throw new HttpError(400, 'subject_not_found');
   }
 
   const sessionToken = randomToken(32);
-  await env.SESSIONS.put(
+  await sessions.putSessionTokenR3Only(
     `session:${sessionToken}`,
     JSON.stringify({ subjectId, issuedAt: now }),
-    { expirationTtl: SESSION_TTL_SECONDS },
+    SESSION_TTL_SECONDS,
   );
   return { subjectId, sessionToken };
 }
@@ -154,33 +201,48 @@ export async function verifyMagicTokenAndStartSession(env, token) {
 /**
  * Require a valid `Authorization: Bearer <sessionToken>` header. Returns
  * { subjectId, sessionToken } or throws 401. Also touches the subject's
- * last_activity_at, which is the R5 purge clock.
+ * lastActivityAt, which is the R5 purge clock.
  *
  * R3: the ONLY way a token passes this check is if it was minted by
  * verifyMagicTokenAndStartSession() after a clicked magic link. There is no
  * other issuer, no master token, no bypass. Keep it that way.
+ *
+ * Works with an Azure Functions v4 HttpRequest unchanged — its .headers is a
+ * WHATWG Headers, same as the Worker's. The second parameter is accepted and
+ * ignored, so `requireSession(request)` and `requireSession(request, config)`
+ * both work.
  */
-export async function requireSession(request, env) {
+export async function requireSession(request, _env) {
   const header = request.headers.get('Authorization') || '';
   const match = header.match(/^Bearer\s+([A-Za-z0-9_-]{20,})$/);
   if (!match) {
     throw new HttpError(401, 'unauthorized: verify your email via the magic link first (R3)');
   }
   const sessionToken = match[1];
-  const raw = await env.SESSIONS.get(`session:${sessionToken}`);
+  const raw = await sessions.get(`session:${sessionToken}`);
   if (!raw) {
     throw new HttpError(401, 'session_expired: verify your email again to get a new session');
   }
-  const { subjectId } = JSON.parse(raw);
+  let subjectId;
+  try {
+    ({ subjectId } = JSON.parse(raw));
+  } catch {
+    await sessions.del(`session:${sessionToken}`);
+    throw new HttpError(401, 'session_invalid: verify your email again to get a new session');
+  }
 
-  // Touch the purge clock. If the subject row vanished (export-and-delete),
-  // the session is orphaned — treat as unauthorized.
-  const result = await env.DB.prepare(
-    'UPDATE subjects SET last_activity_at = ? WHERE id = ? AND purged_at IS NULL',
-  ).bind(nowISO(), subjectId).run();
-  if (!result.meta || result.meta.changes === 0) {
-    await env.SESSIONS.delete(`session:${sessionToken}`);
+  // Touch the purge clock. If the subject document vanished (export-and-delete)
+  // or was purged, the session is orphaned — treat as unauthorized.
+  const touched = await repo.touchSubject(subjectId, nowISO());
+  if (!touched) {
+    await sessions.del(`session:${sessionToken}`);
     throw new HttpError(401, 'session_invalid: subject no longer exists');
   }
   return { subjectId, sessionToken };
 }
+
+/** Session lifetime, exported so route code never re-derives it. */
+export const TTL = Object.freeze({
+  MAGIC_TOKEN_SECONDS: MAGIC_TOKEN_TTL_SECONDS,
+  SESSION_SECONDS: SESSION_TTL_SECONDS,
+});

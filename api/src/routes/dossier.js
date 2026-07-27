@@ -4,28 +4,25 @@
 // joined against the reviewed allowlist metadata (legal entity, HQ, CA
 // registry id, opt-out URL). R3: session-gated — you can only ever read your
 // own dossier. Broker fields that are null carry TODO(verify) markers in
-// brokers.js and render as null here; the frontend shows them as
+// lib/brokers.js and render as null here; the frontend shows them as
 // "unverified", never invents them (accuracy feeds legal letters).
 
-import { HttpError, json } from '../http.js';
-import { requireSession } from '../auth.js';
-import { brokerById } from '../brokers.js';
+import { HttpError, json } from '../lib/http.js';
+import { requireSession } from '../lib/auth.js';
+import { brokerById } from '../lib/brokers.js';
+import * as repo from '../lib/repo.js';
 
-export async function getDossier(request, env) {
-  const { subjectId } = await requireSession(request, env); // R3 gate
+export async function getDossier(request) {
+  const { subjectId } = await requireSession(request); // R3 gate
 
-  const sweep = await env.DB.prepare(
-    `SELECT * FROM sweeps WHERE subject_id = ? ORDER BY created_at DESC LIMIT 1`,
-  ).bind(subjectId).first();
+  const sweep = await repo.latestSweepBySubject(subjectId);
   if (!sweep) {
     throw new HttpError(404, 'no_sweep_yet: run POST /api/sweep first');
   }
 
-  const [{ results: findings }, subject] = await Promise.all([
-    env.DB.prepare('SELECT * FROM findings WHERE sweep_id = ? ORDER BY created_at')
-      .bind(sweep.id).all(),
-    env.DB.prepare('SELECT donate_dismissed FROM subjects WHERE id = ?')
-      .bind(subjectId).first(),
+  const [findings, donateDismissed] = await Promise.all([
+    repo.listFindingsBySweep(sweep.id, subjectId),
+    repo.getDonateDismissed(subjectId),
   ]);
 
   return json({
@@ -33,9 +30,9 @@ export async function getDossier(request, env) {
     sweepStatus: sweep.status,
     // Permanent-dismissal flag (DESIGN §5) so every device this subject
     // verifies on can honor "never ask again" — not just the one that clicked.
-    donateDismissed: !!(subject && subject.donate_dismissed),
+    donateDismissed: !!donateDismissed,
     findings: findings.map((f) => {
-      const b = brokerById(f.broker_id);
+      const b = brokerById(f.brokerId);
       return {
         findingId: f.id, // needed by POST /api/demand
         broker: b
@@ -46,10 +43,10 @@ export async function getDossier(request, env) {
               registryId: b.caRegistryId,   // null = unverified
               optOutUrl: b.optOutUrl,       // null = unverified
             }
-          : { name: f.broker_id, legalName: null, hqAddress: null, registryId: null, optOutUrl: null },
+          : { name: f.brokerId, legalName: null, hqAddress: null, registryId: null, optOutUrl: null },
         status: f.status,
         matched: !!f.matched,
-        publishedFields: JSON.parse(f.published_fields), // field NAMES only (R5)
+        publishedFields: f.publishedFields || [], // field NAMES only (R5)
       };
     }),
   });

@@ -68,7 +68,7 @@ everything about them" = a stalking tool with a nice UI. With R3 it's Incogni.
 The entire ethical difference is one email round-trip.
 
 ### R4 — Allowlist crawling only.
-Firecrawl targets **only** `worker/src/brokers.js` — a curated, reviewed list of
+Firecrawl targets **only** `api/src/lib/brokers.js` — a curated, reviewed list of
 data-broker search/opt-out endpoints. No open-web crawl. No "search the whole internet
 for this person." Respect `robots.txt`. Rate-limit per subject. A PR adding a broker
 must include the company's legal name, HQ address, and CA registry ID.
@@ -78,7 +78,7 @@ implying network-level tracing is a lie; see R2. What we *actually* do is read
 public broker listing pages and record what they publish about you.
 
 ### R5 — PII is radioactive. Treat accordingly.
-- Encrypted at rest in D1 (AES-GCM, key from `wrangler secret`).
+- Encrypted at rest in Cosmos (AES-256-GCM, key from an Azure App Setting).
 - Auto-purge raw PII 90 days after last activity; keep only salted hashes for dedup.
 - `/api/stats` returns aggregate counts only — never a name, never a city.
 - No PII in logs, ever. No PII in error messages.
@@ -99,28 +99,47 @@ and contact go on the letter. That's what makes it work.
 
 ## 2. Architecture
 
-House pattern (per `~/.claude/CLAUDE.md`): GitHub Pages static frontend + Cloudflare
-Worker + D1 + KV. Vanilla JS, zero runtime dependencies, ~$0 infra. Brevo for email,
-Stripe for Apple Pay, Venmo deep-link. **No Supabase.**
+GitHub Pages static frontend + **Azure Functions (Node 22, Linux, Consumption) +
+Cosmos DB (free tier)**, in `rg-consent-archaeology` / `centralus`. Vanilla JS,
+zero runtime dependencies on the frontend, ~$0 infra. Brevo for email, Stripe for
+Apple Pay, Venmo deep-link. **No Supabase.**
+
+The backend originally targeted Cloudflare Workers + D1 + KV; it moved to Azure to
+sit alongside the rest of DTG's infrastructure. The port is in git history if it is
+ever wanted back.
+
+**DNS did not move and cannot.** `doziertechgroup.com` is authoritative on Cloudflare
+(`jonah.ns.cloudflare.com`, `chin.ns.cloudflare.com`), and this Azure subscription has
+no DNS zones. Every record — the Pages CNAME, any API subdomain, Brevo sender
+verification — goes in the **Cloudflare dashboard**. The domain being *registered*
+through Azure does not change that.
 
 ```
   Threads post
        │
        ▼
-  dig.doziertechgroup.com            ← GitHub Pages (docs/, CNAME)
+  dig.doziertechgroup.com            ← GitHub Pages (docs/, CNAME via Cloudflare)
   ┌──────────────────────────────┐
   │  THEATER      │   TRUTH      │   ← the two-panel gag; see §3
   │  (left)       │   (right)    │
   └──────────────────────────────┘
-       │  fetch()
+       │  fetch()  (cross-origin; ALLOWED_ORIGIN, never *)
        ▼
-  dig-api.<sub>.workers.dev        ← Cloudflare Worker
-       ├── D1  consent_archaeology  ← subjects, findings, demands, evidence
-       ├── KV  SESSIONS             ← magic-link tokens, rate limits
+  func-consent-archaeology.azurewebsites.net   ← Azure Functions, Node 22
+       ├── Cosmos `consentarch`     ← subjects, sweeps, findings, demands, evidence
+       │     └── container `sessions`, native TTL
+       │           ← magic-link tokens, sessions, rate limits, robots cache
+       ├── timer trigger            ← 90-day PII purge (R5)
        ├── Brevo API                ← verification email (R3 gate)
        ├── Firecrawl API            ← allowlist broker sweep (R4)
        └── Stripe                   ← donation, return_url on doziertechgroup.com
 ```
+
+Why Cosmos specifically: its **document TTL** is a direct replacement for KV's
+`expirationTtl`, so the security-critical expiries (magic links above all) are enforced
+by the database rather than by us remembering to sweep. Why not Static Web Apps managed
+functions, despite same-origin removing the CORS problem: they do not support timer
+triggers, and R5's purge needs one.
 
 ### User flow
 
@@ -237,12 +256,17 @@ consent-archaeology/
 │  ├─ verify.html         ← magic-link landing
 │  ├─ sweep.html          ← live sweep theater
 │  ├─ dossier.html        ← results + demands + evidence locker
+│  ├─ how-it-works.html   ← plain-English docs tab; no jargon, no theatre
 │  ├─ CNAME              ← dig.doziertechgroup.com
 │  └─ assets/{terminal.css,terminal.js,api.js,theater.js}
-├─ worker/
-│  ├─ wrangler.toml       ← house style: TODO(deploy) markers, secrets documented
-│  ├─ schema.sql          ← D1
-│  └─ src/{index.js,brokers.js,crypto.js,routes/*.js}
+├─ api/                   ← Azure Functions (Node 22, ESM)
+│  ├─ CONTRACT.md         ← storage interface; binding
+│  ├─ host.json
+│  ├─ scripts/build-templates.mjs   ← legal/*.md → src/lib/templates.js
+│  └─ src/
+│     ├─ functions/{http.js,purge.js}   ← trigger registration (v4 model)
+│     ├─ routes/*.js                    ← one per endpoint
+│     └─ lib/{cosmos,repo,sessions,crypto,auth,config,http,brokers,templates}.js
 ├─ legal/
 │  ├─ DISCLAIMER.md       ← stamped onto every generated doc
 │  ├─ LEGAL-BASIS.md      ← statute-by-statute, with currency dates

@@ -1,15 +1,34 @@
 # dependencies
 node_modules/
 
-# secrets & local environment — real values live in `wrangler secret put`, never here
+# secrets & local environment — real values live in Azure App Settings, never here
 .env
 .env.*
 .dev.vars
 
-# wrangler local state
+# Azure Functions local settings. This is THE file that holds live keys on a
+# laptop: Cosmos primary key, PII_ENCRYPTION_KEY, Brevo, Firecrawl. Committing it
+# is the single worst mistake available in this repo, so it is ignored by name,
+# by wildcard, and at any depth. Commit local.settings.json.example instead.
+local.settings.json
+**/local.settings.json
+
+# Azure Functions Core Tools / Azurite local state
+.azure/
+.azurefunctions/
+azurite/
+__azurite_db*__.json
+__blobstorage__/
+__queuestorage__/
+
+# deployment packages — CI builds the zip from source; a committed one is stale
+# the moment it lands and is exactly the kind of artefact secrets hide inside
+*.zip
+
+# wrangler local state (legacy — the Cloudflare Worker this replaced)
 .wrangler/
 
-# build output (there is no build step; if one appears, its output stays out)
+# build output (there is no frontend build step; if one appears, its output stays out)
 dist/
 
 # OS cruft

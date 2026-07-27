@@ -15,17 +15,28 @@
 // re-verified by anyone with the export and a SHA-256 implementation (no
 // trust in us required). The narrative is the user's own account (PII) →
 // stored AES-GCM encrypted (R5), decrypted only for the owner's export.
+//
+// PORT NOTE — the referee for the seq race changed platform, not nature. D1
+// enforced UNIQUE(subject_id, seq); Cosmos enforces it via a unique key policy
+// on /seq within the /subjectId partition, which is the same constraint (see
+// lib/repo.js createEvidence). A violation arrives as RepoConflictError instead
+// of a driver message matching /UNIQUE/i, so that is what the retry catches.
+// If that policy is ever missing from the container, two simultaneous appends
+// fork the chain — a storage guarantee this route cannot fake.
 
-import { HttpError, json, readJson, nowISO } from '../http.js';
-import { encryptPII, decryptPII, sha256Hex, canonicalJSON, uuid } from '../crypto.js';
-import { requireSession } from '../auth.js';
+import { HttpError, json, readJson, nowISO } from '../lib/http.js';
+import { encryptPII, decryptPII, sha256Hex, canonicalJSON, uuid } from '../lib/crypto.js';
+import { requireSession } from '../lib/auth.js';
+import { config } from '../lib/config.js';
+import * as repo from '../lib/repo.js';
+import { RepoConflictError } from '../lib/repo.js';
 
 const GENESIS_HASH = '0'.repeat(64);
 
 // --- POST /api/evidence ------------------------------------------------------
 
-export async function postEvidence(request, env) {
-  const { subjectId } = await requireSession(request, env); // R3 gate
+export async function postEvidence(request) {
+  const { subjectId } = await requireSession(request); // R3 gate
   const body = await readJson(request);
 
   const company = typeof body.company === 'string' ? body.company.trim() : '';
@@ -38,11 +49,10 @@ export async function postEvidence(request, env) {
   if (narrative.length < 1 || narrative.length > 5000) throw new HttpError(400, 'invalid_narrative: 1-5000 chars');
   if (!occurredAt || Number.isNaN(Date.parse(occurredAt))) throw new HttpError(400, 'invalid_occurredAt: ISO date required');
 
-  // Two attempts to absorb a seq race (UNIQUE(subject_id, seq) is the referee).
+  // Two attempts to absorb a seq race (the container's unique key on /seq
+  // within this subject's partition is the referee — see the PORT NOTE).
   for (let attempt = 0; attempt < 2; attempt++) {
-    const tip = await env.DB.prepare(
-      'SELECT seq, hash FROM evidence WHERE subject_id = ? ORDER BY seq DESC LIMIT 1',
-    ).bind(subjectId).first();
+    const tip = await repo.lastEvidenceBySubject(subjectId);
 
     const seq = tip ? tip.seq + 1 : 1;
     const prevHash = tip ? tip.hash : GENESIS_HASH;
@@ -56,16 +66,21 @@ export async function postEvidence(request, env) {
     const evidenceId = uuid();
 
     try {
-      await env.DB.prepare(
-        `INSERT INTO evidence (id, subject_id, seq, company, element, narrative_ciphertext, occurred_at, created_at, prev_hash, hash)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(
-        evidenceId, subjectId, seq, company, element,
-        await encryptPII(env, narrative), occurredAt, createdAt, prevHash, hash,
-      ).run();
+      await repo.createEvidence({
+        id: evidenceId,
+        subjectId,
+        seq,
+        company,
+        element,
+        narrativeCiphertext: await encryptPII(config, narrative),
+        occurredAt,
+        createdAt,
+        prevHash,
+        hash,
+      });
       return json({ evidenceId, hash });
     } catch (err) {
-      if (attempt === 0 && /UNIQUE/i.test(String(err.message))) continue; // lost the race — re-read tip
+      if (attempt === 0 && err instanceof RepoConflictError) continue; // lost the race — re-read tip
       throw err;
     }
   }
@@ -77,21 +92,19 @@ export async function postEvidence(request, env) {
 // exact verification recipe so a third party (lawyer, journalist, arbitrator)
 // can check the chain without trusting this service.
 
-export async function getEvidenceExport(request, env) {
-  const { subjectId } = await requireSession(request, env); // R3 gate
+export async function getEvidenceExport(request) {
+  const { subjectId } = await requireSession(request); // R3 gate
 
-  const { results } = await env.DB.prepare(
-    'SELECT * FROM evidence WHERE subject_id = ? ORDER BY seq',
-  ).bind(subjectId).all();
+  const rows = await repo.listEvidenceBySubject(subjectId);
 
-  const entries = await Promise.all(results.map(async (e) => ({
+  const entries = await Promise.all(rows.map(async (e) => ({
     seq: e.seq,
     company: e.company,
     element: e.element,
-    narrative: e.narrative_ciphertext ? await decryptPII(env, e.narrative_ciphertext) : null, // null = purged (R5)
-    occurredAt: e.occurred_at,
-    createdAt: e.created_at,
-    prevHash: e.prev_hash,
+    narrative: e.narrativeCiphertext ? await decryptPII(config, e.narrativeCiphertext) : null, // null = purged (R5)
+    occurredAt: e.occurredAt,
+    createdAt: e.createdAt,
+    prevHash: e.prevHash,
     hash: e.hash,
   })));
 
