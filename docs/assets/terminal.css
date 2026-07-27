@@ -734,3 +734,199 @@ pre.letter {
 .section-gap { margin-top: 2.5rem; }
 
 noscript .pane { display: block; margin: 1.5rem 0; }
+
+/* ============================================================
+   NAV TABS
+   ============================================================ */
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 1.5rem;
+  border-bottom: 1px solid var(--edge);
+}
+
+.tabs a {
+  padding: 0.55rem 0.95rem;
+  color: var(--ink-dim);
+  text-decoration: none;
+  font-size: 0.85rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  border-bottom: none;
+  margin-bottom: -1px;
+}
+
+.tabs a:hover { color: var(--phos); background: var(--bg-raised); }
+
+.tabs a[aria-current="page"] {
+  color: var(--phos);
+  border-color: var(--edge);
+  background: var(--bg-raised);
+}
+
+/* ============================================================
+   DOCUMENTATION PAGE
+   The rest of the site is theatre. This page is the reference, and
+   it is meant to be readable by someone who has never heard the
+   phrase "data broker" and is not going to enjoy squinting. So:
+   bigger type, a hard cap on line length (long monospace lines are
+   genuinely hard to track back to the left margin), more space
+   between paragraphs, and headings that are obviously headings.
+   ============================================================ */
+
+.doc {
+  max-width: 68ch;          /* ~68 characters — past ~75 the eye loses the line */
+  font-size: 1.06rem;
+  line-height: 1.75;
+}
+
+.doc h1 {
+  font-size: clamp(1.5rem, 4.5vw, 2.1rem);
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: var(--phos);
+  margin: 0 0 1rem;
+}
+
+.doc h2 {
+  font-size: 1.2rem;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: var(--phos);
+  margin: 2.6rem 0 0.9rem;
+}
+
+.doc h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  font-size: 1.06rem;
+  letter-spacing: 0.02em;
+  color: var(--phos);
+  margin: 0 0 0.9rem;
+}
+
+.doc h4 {
+  font-size: 0.99rem;
+  color: var(--ink);
+  margin: 1.6rem 0 0.7rem;
+}
+
+.doc p { margin: 0 0 1.05rem; }
+.doc hr { border: 0; border-top: 1px solid var(--edge); margin: 2.4rem 0; }
+.doc a { color: var(--phos); }
+.doc strong { color: var(--ink); font-weight: 700; }
+.doc em { color: var(--ink); }
+
+.doc dfn {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--amber);
+}
+
+.doc-lede {
+  font-size: 1.1rem;
+  color: var(--ink);
+}
+
+/* Step blocks — numbered, so the reader always knows where they are. */
+.doc-step {
+  border-left: 2px solid var(--edge-bright);
+  padding: 0.1rem 0 0.1rem 1.3rem;
+  margin: 0 0 2.4rem;
+}
+
+.doc-step-n {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9em;
+  height: 1.9em;
+  border: 1px solid var(--phos-dim);
+  color: var(--phos);
+  font-size: 0.85em;
+  border-radius: 50%;
+}
+
+/* Step 5 is the one people get wrong. Make it impossible to skim past. */
+.doc-step-key { border-left-color: var(--amber); }
+
+.doc-callout {
+  border: 1px dashed var(--amber);
+  padding: 0.9rem 1.05rem;
+  color: var(--ink);
+  margin: 0 0 1.2rem;
+}
+
+.doc-aside {
+  border-left: 2px solid var(--edge);
+  padding-left: 0.95rem;
+  color: var(--ink-dim);
+  font-size: 0.96rem;
+}
+
+.doc-short, .doc-howto { padding-left: 1.4rem; margin: 0 0 1.2rem; }
+.doc-short li, .doc-howto li { margin-bottom: 0.7rem; padding-left: 0.3rem; }
+
+.doc-nope { list-style: none; padding: 0; margin: 0 0 1.2rem; }
+
+.doc-nope li {
+  position: relative;
+  padding-left: 1.5rem;
+  margin-bottom: 0.9rem;
+}
+
+.doc-nope li::before {
+  content: "\2014";                /* em dash — a plain, quiet bullet */
+  position: absolute;
+  left: 0;
+  color: var(--phos-dim);
+}
+
+.doc-letters, .doc-glossary { margin: 0 0 1.2rem; }
+
+.doc-letters dt, .doc-glossary dt {
+  color: var(--phos);
+  font-weight: 700;
+  margin-top: 1.1rem;
+}
+
+.doc-letters dd, .doc-glossary dd {
+  margin: 0.3rem 0 0;
+  padding-left: 1.2rem;
+  border-left: 1px solid var(--edge);
+}
+
+.doc-star {
+  color: var(--amber);
+  font-weight: 400;
+  font-size: 0.85em;
+  letter-spacing: 0.04em;
+}
+
+/* Live service status. Three states, all honest. */
+.doc-status {
+  border: 1px solid var(--edge-bright);
+  padding: 0.95rem 1.1rem;
+  margin: 1.6rem 0;
+  font-size: 0.99rem;
+}
+
+.doc-status.ok   { border-color: var(--phos-dim); }
+.doc-status.down { border-color: var(--amber); color: var(--ink); }
+
+.doc-status-detail {
+  display: block;
+  margin-top: 0.6rem;
+  color: var(--ink-dim);
+  font-size: 0.87rem;
+}
+
+@media (max-width: 560px) {
+  .doc { font-size: 1.02rem; }
+  .doc-step { padding-left: 1rem; }
+}

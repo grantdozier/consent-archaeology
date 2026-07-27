@@ -10,13 +10,18 @@ import { BROKERS } from '../brokers.js';
 
 export async function getStats(request, env) {
   const [demands, verified] = await Promise.all([
-    // "demandsSent" = demand letters generated for users to send as
-    // themselves (R7 — we draft, the user sends in their own name).
     env.DB.prepare('SELECT COUNT(*) AS n FROM demands').first(),
     env.DB.prepare('SELECT COUNT(*) AS n FROM subjects WHERE verified_at IS NOT NULL').first(),
   ]);
   return json({
-    demandsSent: demands.n,
+    // DRAFTED, not sent, and not filed. This service never transmits a
+    // demand to a company — R7 means the user sends it themselves, in
+    // their own name, from their own address. The count of letters we
+    // generated is the only number we are entitled to report; we have no
+    // way to know how many were actually sent, and claiming otherwise
+    // would be exactly the kind of unearned number this project exists
+    // to object to. Renamed from `demandsSent` for that reason.
+    demandsDrafted: demands.n,
     subjectsVerified: verified.n,
     brokersCovered: BROKERS.length,
   });

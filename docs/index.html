@@ -21,6 +21,13 @@
     <span class="strap">DIG TERMINAL // COMPARTMENT: HUMAN-BASELINE</span>
   </header>
 
+  <nav class="tabs" aria-label="Main">
+    <a href="index.html" aria-current="page">Start</a>
+    <a href="how-it-works.html">How it works</a>
+    <a href="dossier.html">Your dossier</a>
+    <a href="https://github.com/grantdozier/consent-archaeology">Source code</a>
+  </nav>
+
   <main id="main">
 
     <noscript>
@@ -54,7 +61,7 @@
         <h2 class="pane-head">FIELD TERMINAL // BOOT</h2>
         <div id="bootLog" class="term-log"></div>
         <div class="stats-row" id="statsRow" hidden>
-          <span>DEMANDS FILED<br><b id="statDemands">—</b></span>
+          <span>LETTERS DRAFTED<br><b id="statDemands">—</b></span>
           <span>SUBJECTS VERIFIED<br><b id="statSubjects">—</b></span>
           <span>BROKERS COVERED<br><b id="statBrokers">—</b></span>
         </div>
@@ -260,7 +267,7 @@
     try {
       const s = await statsPromise;
       await CA.term.line(bootLog, '> UPLINK ............... ESTABLISHED');
-      document.getElementById('statDemands').textContent = Number(s.demandsSent || 0).toLocaleString();
+      document.getElementById('statDemands').textContent = Number(s.demandsDrafted || 0).toLocaleString();
       document.getElementById('statSubjects').textContent = Number(s.subjectsVerified || 0).toLocaleString();
       document.getElementById('statBrokers').textContent = Number(s.brokersCovered || 0).toLocaleString();
       document.getElementById('statsRow').hidden = false;
