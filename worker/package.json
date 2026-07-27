@@ -1,0 +1,16 @@
+{
+  "name": "consent-archaeology-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CONSENT ARCHAEOLOGY api worker — zero runtime dependencies (Web Crypto + fetch only)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute consent_archaeology --remote --file=./schema.sql",
+    "db:init:local": "wrangler d1 execute consent_archaeology --local --file=./schema.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

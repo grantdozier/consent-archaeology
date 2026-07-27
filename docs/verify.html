@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IDENTITY CHECK — CONSENT ARCHAEOLOGY</title>
+<meta name="description" content="Magic-link verification. The one boring step that keeps this a privacy tool and not a stalking tool.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0e0a'/%3E%3Ctext x='2' y='12' font-size='10' fill='%2333ff66' font-family='monospace'%3E%E2%96%93%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/terminal.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
+<div class="scanlines" aria-hidden="true"></div>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="site" href="index.html">CONSENT ARCHAEOLOGY</a>
+    <span class="strap">CHECKPOINT // CREDENTIAL VALIDATION</span>
+  </header>
+
+  <main id="main">
+    <h1>IDENTITY CHECK</h1>
+    <div class="stamp-row">
+      <span class="stamp">SINGLE USE</span>
+      <span class="stamp green">R3: ANTI-DOXING GATE</span>
+    </div>
+
+    <noscript>
+      <section class="pane pane-truth">
+        <h2 class="pane-head">WHAT'S ACTUALLY HAPPENING (NO-JAVASCRIPT EDITION)</h2>
+        <p>Verifying the link in your email requires JavaScript, which is disabled.
+        Enable it and reload this page — the token is still in the address bar.</p>
+      </section>
+    </noscript>
+
+    <section class="panes" aria-label="Credential validation">
+      <div class="pane pane-theater">
+        <h2 class="pane-head">CHECKPOINT TERMINAL</h2>
+        <div id="verifyLog" class="term-log"></div>
+        <div class="progress-wrap">
+          <div id="verifyProgress" class="progress" aria-label="Credential validation"></div>
+        </div>
+        <div class="btn-row" id="nextRow" hidden>
+          <a class="btn btn-big" href="sweep.html" id="beginSweep">▶ BEGIN SWEEP</a>
+        </div>
+        <div class="btn-row" id="retryRow" hidden>
+          <a class="btn" href="index.html#intake">REQUEST A NEW LINK</a>
+        </div>
+      </div>
+
+      <div class="pane pane-truth">
+        <h2 class="pane-head">WHAT'S ACTUALLY HAPPENING</h2>
+        <p>You clicked a link we emailed you. This page is sending the one-time token
+        from that link back to our server, which checks it and — if it's valid — hands
+        this browser tab a session token.</p>
+        <p>Cryptographically, that is the entire ceremony. It proves you control that
+        inbox, which is the only thing standing between "privacy tool" and
+        "people-search engine with mood lighting." So we treat one email click like a
+        state occasion. That's the joke. It's also the actual security model.</p>
+        <p>Once verified, you may run a sweep on exactly one person: <strong>you</strong>.
+        There is no mode where you look up someone else. There is no admin bypass.
+        The gap between this site and a stalking tool is this page, so this page does
+        not bend.</p>
+        <p>The session lives in this tab and ends when you close it. The link itself is
+        single-use — if you need another, the intake form issues a fresh one.</p>
+        <p id="verifyTruth" class="truth-status" aria-live="polite"></p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>CONSENT ARCHAEOLOGY is a self-help letter generator, not a law firm. Nothing here
+    is legal advice; every document is sent by you, as yourself, in your own name.</p>
+    <p>
+      <a href="https://github.com/grantdozier/consent-archaeology">source (MIT)</a> ·
+      <a href="https://github.com/grantdozier/consent-archaeology/blob/main/DESIGN.md">the hard rules</a> ·
+      built in Louisiana by <a href="https://doziertechgroup.com">Dozier Tech Group</a>
+    </p>
+  </footer>
+</div>
+
+<script src="assets/terminal.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/theater.js"></script>
+<script>
+'use strict';
+(function () {
+
+  const log = document.getElementById('verifyLog');
+  const truth = document.getElementById('verifyTruth');
+  const bar = CA.theater.progress(document.getElementById('verifyProgress'));
+
+  async function main() {
+    const token = new URLSearchParams(location.search).get('token');
+
+    if (!token) {
+      await CA.term.line(log, '> AWAITING CREDENTIAL ........ NONE PRESENTED', { cls: 'amber' });
+      bar.fail('NO TOKEN');
+      CA.term.status(truth,
+        'There is no token in this page’s address. This page only works when reached ' +
+        'from the link in your verification email. If you typed the address by hand: nice ' +
+        'instinct, wrong door — start at the intake form.', true);
+      document.getElementById('retryRow').hidden = false;
+      return;
+    }
+
+    bar.busy('VALIDATING CREDENTIAL');
+    CA.term.status(truth, 'Sending the one-time token to the server for validation. One HTTPS GET, in flight…');
+
+    // The one real request; narration rides on top and stops when it settles.
+    const req = CA.api.verify(token);
+    CA.theater.narrate(log, [
+      '> credential presented ..............',
+      '> checking compartment seals ........',
+      '> consulting the one true list ......'
+    ], req);
+
+    try {
+      const res = await req;
+      if (!res.sessionToken) {
+        // Server said ok but didn't hand over a session: do NOT pretend.
+        throw new CA.api.ApiError('The server validated the link but returned no session token. That is a backend bug worth reporting.', { status: 500 });
+      }
+      CA.api.setSession(res.sessionToken);
+      bar.done('IDENTITY CONFIRMED');
+      await CA.term.line(log, '> IDENTITY CONFIRMED', { cls: 'loud' });
+      await CA.term.line(log, '> CLEARANCE GRANTED ......... CIVILIAN');
+      await CA.term.line(log, '> AUTHORIZED TARGET ......... SELF (population: 1)');
+      CA.term.status(truth,
+        'The server accepted your token and issued this tab a session. You are verified. ' +
+        'The sweep button below now works — it will only ever search for the identity ' +
+        'you just proved.');
+      const nextRow = document.getElementById('nextRow');
+      nextRow.hidden = false;
+      document.getElementById('beginSweep').focus();
+    } catch (err) {
+      bar.fail('CREDENTIAL REJECTED');
+      await CA.term.line(log, '> CREDENTIAL REJECTED', { cls: 'amber' });
+      CA.term.status(truth,
+        'Verification failed. ' + err.message + ' Likely causes: the link expired, was ' +
+        'already used (they are single-use), or got mangled by an email client. Request ' +
+        'a fresh one from the intake form — it costs nothing and holds no grudge.', true);
+      document.getElementById('retryRow').hidden = false;
+    }
+  }
+
+  main();
+
+})();
+</script>
+</body>
+</html>

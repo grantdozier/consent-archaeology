@@ -1,0 +1,82 @@
+name = "dig-api"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# CONSENT ARCHAEOLOGY worker — dig-api.<account>.workers.dev
+# Frontend (GitHub Pages) lives at dig.doziertechgroup.com and fetch()es this API.
+#
+# ⚠ Runtime gotcha (house rule): local default Node is 20; wrangler needs Node >= 22.
+#   Switch versions BEFORE `wrangler dev` / `wrangler deploy`.
+
+# --- D1: consent_archaeology -------------------------------------------------
+# Subjects, sweeps, findings, demands, evidence locker. ALL subject PII in this
+# database is AES-GCM ciphertext (R5) — the plaintext never touches disk.
+# There is NO SSN column anywhere in schema.sql, by design (R1).
+# TODO(deploy): create the database and paste its id:
+#   wrangler d1 create consent_archaeology
+# then load the schema:
+#   wrangler d1 execute consent_archaeology --remote --file=./schema.sql
+[[d1_databases]]
+binding = "DB"
+database_name = "consent_archaeology"
+database_id = "TODO_DEPLOY_D1_DATABASE_ID"   # TODO(deploy)
+
+# --- KV: SESSIONS ------------------------------------------------------------
+# Short-lived state only, never durable PII:
+#   magic:<token>    — single-use magic-link tokens (15 min TTL). R3 gate.
+#   session:<token>  — bearer session tokens (24 h TTL). ONLY minted by the
+#                      /api/verify handler after a clicked Brevo magic link.
+#   rl:*             — per-subject / per-email rate-limit counters (R4/R5).
+#   robots:<host>    — cached robots.txt verdicts for the broker allowlist (R4).
+# TODO(deploy): create the namespace and paste its id:
+#   wrangler kv namespace create SESSIONS
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "TODO_DEPLOY_SESSIONS_KV_NAMESPACE_ID"          # TODO(deploy)
+preview_id = "TODO_DEPLOY_SESSIONS_KV_PREVIEW_ID"    # TODO(deploy)
+
+# --- Cron: 90-day PII purge (R5) ---------------------------------------------
+# Daily. Subjects with no activity for 90 days get their PII ciphertext (and
+# encrypted demand letters / evidence narratives) nulled. Salted hashes remain
+# for dedup. See scheduled() in src/index.js.
+[triggers]
+crons = ["17 6 * * *"]
+
+[vars]
+# Non-secret config only.
+# PUBLIC_APP_URL — where magic links land (frontend verify.html reads ?token=).
+PUBLIC_APP_URL = "https://dig.doziertechgroup.com"
+# ALLOWED_ORIGINS — CORS allowlist, comma-separated. Localhost entries are for
+# `python -m http.server` / `wrangler dev` style local frontend testing.
+ALLOWED_ORIGINS = "https://dig.doziertechgroup.com,http://localhost:8788,http://127.0.0.1:8788"
+# Brevo sender. TODO(deploy): verify this sender domain in Brevo — Brevo will
+# hand you DKIM/SPF (and possibly DMARC) records; they go in the CLOUDFLARE DNS
+# dashboard for doziertechgroup.com (all DNS lives in Cloudflare, never Azure).
+SENDER_EMAIL = "clearance@doziertechgroup.com"       # TODO(deploy) — verify in Brevo + Cloudflare DNS
+SENDER_NAME = "CONSENT ARCHAEOLOGY"
+
+# --- Secrets — set via `wrangler secret put <NAME>`, NEVER in this file ------
+#   BREVO_API_KEY        Brevo transactional API key (magic-link email, R3).
+#                        Free tier: 300/day, forever — house default for email.
+#   FIRECRAWL_API_KEY    Firecrawl scrape key (format fc_...). Firecrawl is an
+#                        HTML→markdown scraper; it reads allowlisted broker
+#                        pages (R4) and nothing else.
+#   PII_ENCRYPTION_KEY   32 random bytes, base64. AES-256-GCM key for PII at
+#                        rest in D1 (R5). Generate: openssl rand -base64 32
+#                        ⚠ Losing this key = all stored PII is unrecoverable
+#                        (which is arguably a feature, but warn yourself).
+#   PII_HASH_SALT        32 random bytes, base64. HMAC key for the salted
+#                        dedup hashes (R5). Generate: openssl rand -base64 32
+#
+# Stripe note: donations are a Stripe Payment Link — configured entirely in the
+# Stripe dashboard, no server-side Stripe secret needed for MVP. The Payment
+# Link's return URL must be on doziertechgroup.com:
+#   https://doziertechgroup.com/dig/thanks
+# Apple Pay requires domain verification on doziertechgroup.com (Stripe dashboard).
+
+# Routes — TODO(deploy): the workers.dev URL works out of the box; if you later
+# want api on the apex zone, add a route here (zone doziertechgroup.com is on
+# Cloudflare already):
+# [[routes]]
+# pattern = "dig-api.doziertechgroup.com/*"
+# zone_name = "doziertechgroup.com"

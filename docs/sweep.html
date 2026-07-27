@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EXCAVATION IN PROGRESS — CONSENT ARCHAEOLOGY</title>
+<meta name="description" content="Live broker sweep. The progress bar is real. That is the twist.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0e0a'/%3E%3Ctext x='2' y='12' font-size='10' fill='%2333ff66' font-family='monospace'%3E%E2%96%93%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/terminal.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
+<div class="scanlines" aria-hidden="true"></div>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="site" href="index.html">CONSENT ARCHAEOLOGY</a>
+    <span class="strap">DIG SITE // ACTIVE EXCAVATION</span>
+  </header>
+
+  <main id="main">
+    <h1>THE SWEEP</h1>
+    <div class="stamp-row">
+      <span class="stamp">ALLOWLIST ONLY</span>
+      <span class="stamp green">SUBJECT: SELF</span>
+    </div>
+
+    <noscript>
+      <section class="pane pane-truth">
+        <h2 class="pane-head">WHAT'S ACTUALLY HAPPENING (NO-JAVASCRIPT EDITION)</h2>
+        <p>The sweep needs JavaScript to talk to the server. It is disabled, so nothing
+        is happening, which we felt you should know rather than guess.</p>
+      </section>
+    </noscript>
+
+    <section class="panes" aria-label="Sweep progress">
+      <div class="pane pane-theater">
+        <h2 class="pane-head">EXCAVATION LOG</h2>
+        <div id="sweepLog" class="term-log"></div>
+        <div class="progress-wrap">
+          <div id="sweepProgress" class="progress" aria-label="Broker sweep progress"></div>
+        </div>
+        <div class="btn-row" id="doneRow" hidden>
+          <a class="btn btn-big btn-amber" href="dossier.html" id="openDossier">▶ OPEN DOSSIER</a>
+        </div>
+        <div class="btn-row" id="retryRow" hidden>
+          <button type="button" class="btn" id="retryBtn">RETRY SWEEP</button>
+        </div>
+      </div>
+
+      <div class="pane pane-truth">
+        <h2 class="pane-head">WHAT'S ACTUALLY HAPPENING</h2>
+        <p>We are fetching public web pages from a fixed, human-reviewed list of
+        data-broker sites and reading what they publish about the identity you verified.
+        That is the entire operation. It is a scraper in a trench coat.</p>
+        <p>Things this is <strong>not</strong> doing: tracing IP addresses, breaching
+        anything, accessing private databases, or searching the open internet. Broker
+        listing pages are public — that is the scandal — and we are reading yours, from
+        a list anyone can audit in the source.</p>
+        <p>The progress bar is wired to actual page fetches reported by the server. It
+        moves when a broker site finishes loading and at no other time. When it stalls,
+        a data broker's website is being slow, which — considering what they charge for
+        your address — feels about right.</p>
+        <p>Each broker also gets its corporate record pulled: legal entity name,
+        headquarters address, registry ID. They collected your address history.
+        It seemed only polite to collect theirs.</p>
+        <p id="sweepTruth" class="truth-status" aria-live="polite"></p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>CONSENT ARCHAEOLOGY is a self-help letter generator, not a law firm. Nothing here
+    is legal advice; every document is sent by you, as yourself, in your own name.</p>
+    <p>
+      <a href="https://github.com/grantdozier/consent-archaeology">source (MIT)</a> ·
+      <a href="https://github.com/grantdozier/consent-archaeology/blob/main/DESIGN.md">the hard rules</a> ·
+      built in Louisiana by <a href="https://doziertechgroup.com">Dozier Tech Group</a>
+    </p>
+  </footer>
+</div>
+
+<script src="assets/terminal.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/theater.js"></script>
+<script>
+'use strict';
+(function () {
+
+  const log = document.getElementById('sweepLog');
+  const truth = document.getElementById('sweepTruth');
+  const bar = CA.theater.progress(document.getElementById('sweepProgress'));
+
+  const POLL_MS = 2000;            // polling cadence (real waits between real requests)
+  const MAX_POLL_FAILURES = 3;     // transient blips tolerated, then we tell the truth
+
+  let renderedFindings = 0;
+
+  function dots(name, width) {
+    const n = String(name || 'UNNAMED ENTITY').toUpperCase();
+    const pad = Math.max(2, width - n.length);
+    return n + ' ' + '.'.repeat(pad);
+  }
+
+  /** Print theater lines for findings the server just reported. Data is real. */
+  async function renderNewFindings(findings) {
+    if (!Array.isArray(findings)) return;
+    for (; renderedFindings < findings.length; renderedFindings++) {
+      const f = findings[renderedFindings] || {};
+      const name = (f.broker && f.broker.name) || f.name || 'UNNAMED ENTITY';
+      if (f.matched) {
+        const k = Array.isArray(f.publishedFields) ? f.publishedFields.length : 0;
+        await CA.term.line(log,
+          '> ' + dots(name, 28) + ' RECORD LOCATED' + (k ? ' [' + k + ' FIELDS]' : ''),
+          { cls: 'amber' });
+      } else {
+        await CA.term.line(log, '> ' + dots(name, 28) + ' NO PUBLISHED RECORD', { cls: 'dim' });
+      }
+    }
+  }
+
+  function matchedCount(findings) {
+    return Array.isArray(findings) ? findings.filter(function (f) { return f && f.matched; }).length : 0;
+  }
+
+  /** Poll the real sweep status until it finishes. Progress = server counts only. */
+  async function poll(sweepId) {
+    let failures = 0;
+    for (;;) {
+      let s;
+      try {
+        s = await CA.api.getSweep(sweepId);
+        failures = 0;
+      } catch (err) {
+        failures++;
+        if (failures >= MAX_POLL_FAILURES) throw err;
+        CA.term.status(truth,
+          'A status check failed (' + err.message + ') — retrying, attempt ' +
+          (failures + 1) + ' of ' + MAX_POLL_FAILURES + '. The sweep itself may still be running server-side.', true);
+        await CA.term.sleep(POLL_MS);
+        continue;
+      }
+
+      const done = (s.progress && s.progress.done) || 0;
+      const total = (s.progress && s.progress.total) || 0;
+      if (total > 0) {
+        bar.set(done, total, 'BROKER SITES READ');
+      } else {
+        bar.busy('AWAITING FIRST CONTACT');
+      }
+      await renderNewFindings(s.findings);
+      CA.term.status(truth,
+        'Checked ' + done + ' of ' + (total || '?') + ' broker sites so far. ' +
+        matchedCount(s.findings) + ' published records match you. These numbers come ' +
+        'straight from the server; we do not embellish them, even when zero would be funnier.');
+
+      const st = String(s.status || '').toLowerCase();
+      if (st === 'complete' || st === 'completed' || st === 'done' || st === 'finished') return s;
+      if (st === 'failed' || st === 'error') {
+        throw new CA.api.ApiError('The server reports the sweep failed' +
+          (s.error ? ': ' + s.error : '.'), { status: 500 });
+      }
+      await CA.term.sleep(POLL_MS);
+    }
+  }
+
+  async function runSweep(resumeId) {
+    document.getElementById('retryRow').hidden = true;
+
+    let sweepId = resumeId;
+    if (!sweepId) {
+      bar.busy('FILING EXCAVATION PERMIT');
+      CA.term.status(truth, 'Asking the server to start the sweep. One HTTPS POST, in flight…');
+      const startReq = CA.api.startSweep();
+      CA.theater.narrate(log, [
+        '> filing excavation permit ..........',
+        '> unrolling the site map ............',
+        '> distributing tiny shovels .........'
+      ], startReq);
+      const started = await startReq;   // real result or real throw
+      sweepId = started.sweepId;
+      CA.api.setSweepId(sweepId);
+      await CA.term.line(log, '> PERMIT GRANTED — SWEEP ' + String(sweepId).slice(0, 12) + ' ACTIVE');
+    } else {
+      await CA.term.line(log, '> RESUMING SWEEP ' + String(sweepId).slice(0, 12) + ' (page was reloaded)');
+    }
+
+    const final = await poll(sweepId);
+    const hits = matchedCount(final.findings);
+
+    bar.done('EXCAVATION COMPLETE');
+    await CA.term.line(log, '> EXCAVATION COMPLETE', { cls: 'loud' });
+    await CA.term.line(log, '> ' + hits + ' ENTIT' + (hits === 1 ? 'Y HOLDS' : 'IES HOLD') + ' MATERIAL ON SUBJECT');
+    CA.term.status(truth,
+      'Done. ' + hits + ' of the broker sites on our list publish a record matching you. ' +
+      'The dossier names each one — legal entity, headquarters address, registry ID — ' +
+      'and generates the letters that ask them for the receipt.');
+
+    const doneRow = document.getElementById('doneRow');
+    doneRow.hidden = false;
+    document.getElementById('openDossier').focus();
+  }
+
+  async function main() {
+    // R3 gate: no verified session, no sweep, no exceptions.
+    if (!CA.theater.gate({ logEl: log, statusEl: truth, backHref: 'index.html#intake' })) {
+      bar.fail('NO CLEARANCE');
+      return;
+    }
+
+    try {
+      await runSweep(CA.api.getSweepId());
+    } catch (err) {
+      bar.fail('SWEEP HALTED');
+      await CA.term.line(log, '> SWEEP HALTED — SEE PLAIN-ENGLISH PANEL', { cls: 'amber' });
+      CA.theater.apiFail(truth, err, 'The sweep');
+      document.getElementById('retryRow').hidden = false;
+    }
+  }
+
+  document.getElementById('retryBtn').addEventListener('click', function () {
+    // A retry starts a fresh, real sweep; never replays old numbers.
+    try { sessionStorage.removeItem('ca_sweep_id'); } catch (e) {}
+    renderedFindings = 0;
+    main();
+  });
+
+  main();
+
+})();
+</script>
+</body>
+</html>

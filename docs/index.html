@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONSENT ARCHAEOLOGY — You allegedly agreed. Prove it.</title>
+<meta name="description" content="An absurdly over-classified terminal for the least-protected asset in modern life: your own name. Find who sells your data, then demand the consent receipt they are legally required to have.">
+<meta property="og:title" content="CONSENT ARCHAEOLOGY">
+<meta property="og:description" content="You allegedly agreed. Prove it. Find who sells your data and demand the consent receipt — GDPR Art. 7(1), CCPA, in your name, with a paper trail.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://dig.doziertechgroup.com/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0e0a'/%3E%3Ctext x='2' y='12' font-size='10' fill='%2333ff66' font-family='monospace'%3E%E2%96%93%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/terminal.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
+<div class="scanlines" aria-hidden="true"></div>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="site" href="index.html">CONSENT ARCHAEOLOGY</a>
+    <span class="strap">DIG TERMINAL // COMPARTMENT: HUMAN-BASELINE</span>
+  </header>
+
+  <main id="main">
+
+    <noscript>
+      <section class="pane pane-truth">
+        <h2 class="pane-head">WHAT'S ACTUALLY HAPPENING (NO-JAVASCRIPT EDITION)</h2>
+        <p>This entire site is JavaScript. With it disabled, you get this sentence,
+        which is at least honest. The source is on
+        <a href="https://github.com/grantdozier/consent-archaeology">GitHub</a>
+        if you would rather read it than run it.</p>
+      </section>
+    </noscript>
+
+    <!-- ============ SPLASH ============ -->
+    <section aria-labelledby="splash-title">
+      <h1 id="splash-title">
+        <span class="sr-only">CONSENT ARCHAEOLOGY</span>
+        <span class="logo-block" aria-hidden="true"><pre class="logo">
+ ██████╗ ██████╗ ███╗   ██╗███████╗███████╗███╗   ██╗████████╗
+██╔════╝██╔═══██╗████╗  ██║██╔════╝██╔════╝████╗  ██║╚══██╔══╝
+██║     ██║   ██║██╔██╗ ██║███████╗█████╗  ██╔██╗ ██║   ██║
+██║     ██║   ██║██║╚██╗██║╚════██║██╔══╝  ██║╚██╗██║   ██║
+╚██████╗╚██████╔╝██║ ╚████║███████║███████╗██║ ╚████║   ██║
+ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝  ╚═══╝   ╚═╝
+             A  R  C  H  A  E  O  L  O  G  Y</pre></span>
+      </h1>
+      <p class="tagline">You allegedly agreed. <span class="amber">Prove it.</span></p>
+
+      <div class="btn-row">
+        <button type="button" id="requestClearance" class="btn btn-big"
+                aria-controls="intake" aria-expanded="false">▶ REQUEST CLEARANCE</button>
+        <a class="btn btn-quiet" href="https://github.com/grantdozier/consent-archaeology">READ THE SOURCE</a>
+      </div>
+    </section>
+
+    <!-- ============ BOOT / INTRO — two panels ============ -->
+    <section class="panes" aria-label="Terminal boot sequence and plain-English explanation">
+      <div class="pane pane-theater">
+        <h2 class="pane-head">FIELD TERMINAL // BOOT</h2>
+        <div id="bootLog" class="term-log"></div>
+        <div class="stats-row" id="statsRow" hidden>
+          <span>DEMANDS FILED<br><b id="statDemands">—</b></span>
+          <span>SUBJECTS VERIFIED<br><b id="statSubjects">—</b></span>
+          <span>BROKERS COVERED<br><b id="statBrokers">—</b></span>
+        </div>
+      </div>
+
+      <div class="pane pane-truth">
+        <h2 class="pane-head">WHAT'S ACTUALLY HAPPENING</h2>
+        <p>This is a static web page. The glow is CSS. The "secure facility" is free
+        hosting on GitHub Pages, which is also where programmers keep their dotfiles.</p>
+        <p>Your connection is encrypted with ordinary HTTPS — the same encryption you
+        used the last time you ordered a burrito online. We are dramatizing the padlock
+        icon. The padlock was already there.</p>
+        <p>What this site actually does: data brokers sell records about you — name,
+        address history, phone, relatives, an income guess — for about $0.003. We check
+        a fixed, human-reviewed list of those brokers for a record matching <em>you</em>
+        (and only you — you have to prove your identity by email first). Then we help
+        you send each one a letter with a very specific question: <strong>show me the
+        record proving I agreed to this.</strong> Under GDPR Article&nbsp;7(1) they are
+        required to be able to. A remarkable number of them cannot.</p>
+        <p>Everything is free. There is a donation button at the very end, after your
+        results, and if you dismiss it we never ask again.</p>
+        <p id="statsTruth" class="truth-status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <!-- ============ INTAKE — two panels ============ -->
+    <section id="intake" class="section-gap" hidden aria-labelledby="intake-title">
+      <h2 id="intake-title">SUBJECT INTAKE — FORM 27-C <span class="dim">(CIVILIAN SELF-DISCLOSURE)</span></h2>
+      <div class="stamp-row">
+        <span class="stamp green">EYES ONLY: YOURS</span>
+        <span class="stamp">SELF-REPORT</span>
+      </div>
+
+      <div class="panes">
+        <div class="pane pane-theater">
+          <h2 class="pane-head">INTAKE TERMINAL</h2>
+
+          <form id="intakeForm" novalidate>
+            <fieldset>
+              <legend>Subject identification</legend>
+
+              <div class="field">
+                <label for="fullName">Full name <span class="req" aria-hidden="true">*</span></label>
+                <input id="fullName" name="fullName" type="text" required
+                       autocomplete="name" placeholder="as the brokers would file you">
+              </div>
+
+              <div class="field">
+                <label for="email">Email <span class="req" aria-hidden="true">*</span></label>
+                <input id="email" name="email" type="email" required
+                       autocomplete="email" placeholder="verification link goes here">
+                <p class="hint">One verification email. It is the entire security model.</p>
+              </div>
+
+              <div class="field">
+                <label for="phone">Phone (optional)</label>
+                <input id="phone" name="phone" type="tel" autocomplete="tel"
+                       placeholder="improves broker matching">
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Geographic record</legend>
+
+              <div class="field-grid">
+                <div class="field">
+                  <label for="city">City <span class="req" aria-hidden="true">*</span></label>
+                  <input id="city" name="city" type="text" required
+                         autocomplete="address-level2" placeholder="Lafayette">
+                </div>
+                <div class="field">
+                  <label for="state">State <span class="req" aria-hidden="true">*</span></label>
+                  <input id="state" name="state" type="text" required maxlength="32"
+                         autocomplete="address-level1" placeholder="LA">
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="priorAddresses">Prior addresses (optional, one per line)</label>
+                <textarea id="priorAddresses" name="priorAddresses" rows="3"
+                          placeholder="1402 Old Apartment St, Baton Rouge, LA"></textarea>
+              </div>
+
+              <div class="field">
+                <label for="birthYear">Birth year (optional)</label>
+                <input id="birthYear" name="birthYear" type="number" inputmode="numeric"
+                       min="1900" max="2012" placeholder="1991">
+                <p class="hint">Year only. Separates you from other people with your name.</p>
+              </div>
+            </fieldset>
+
+            <!-- R1: the SSN gag. This is a static div, not a form control.
+                 There is deliberately NO input element anywhere inside it,
+                 and there never will be. See DESIGN.md Hard Rule R1. -->
+            <div class="ssn-gag" role="note" aria-label="Social Security Number field, removed on advice of counsel">
+              <p class="ssn-row">
+                <span class="ssn-label">SSN&nbsp;........................</span>
+                <span class="ssn-value">[FIELD REMOVED ON ADVICE OF COUNSEL]</span>
+              </p>
+              <p class="ssn-note">if you're worried about SSN exposure, the actual fix is a
+              <strong>credit freeze</strong>. It's free, it's the law, it takes 10 minutes,
+              and it works better than we do.
+              <a href="https://www.annualcreditreport.com" rel="noopener">annualcreditreport.com</a>
+              → freeze all three bureaus.</p>
+            </div>
+
+            <div class="btn-row">
+              <button type="submit" id="intakeSubmit" class="btn btn-big">TRANSMIT TO SECURE COMPARTMENT</button>
+            </div>
+            <p class="hint">(this sends exactly one HTTPS POST)</p>
+          </form>
+
+          <div id="intakeTheaterLog" class="term-log"></div>
+          <div class="progress-wrap" id="intakeProgressWrap" hidden>
+            <div id="intakeProgress" class="progress" aria-label="Intake transmission"></div>
+          </div>
+
+          <div id="intakeDone" hidden>
+            <h3 tabindex="-1" id="intakeDoneTitle" class="amber">■ AWAITING COUNTERSIGN</h3>
+            <p class="ink" id="intakeDoneMsg"></p>
+          </div>
+        </div>
+
+        <div class="pane pane-truth">
+          <h2 class="pane-head">WHAT'S ACTUALLY HAPPENING</h2>
+          <p>This is a form. Here is what every field is for, because forms that
+          collect personal data and don't explain themselves are the whole reason
+          this site exists:</p>
+          <ul>
+            <li><strong>Full name</strong> — brokers index people by name plus address
+            history, so we search with what they'd have. Yes, giving a privacy tool your
+            name is uncomfortable. It's encrypted at rest, it appears in no logs, and it
+            is automatically deleted after 90 days of inactivity.</li>
+            <li><strong>Email</strong> — we send one verification link to it. Clicking
+            that link is the only thing separating this site from a people-search engine
+            for stalkers, so it's not optional and there is no admin override. We checked.
+            There is no admin.</li>
+            <li><strong>Phone</strong> — optional. Improves matching. Skip it if it feels
+            weird. It feels a little weird to us too.</li>
+            <li><strong>City / state</strong> — brokers file you geographically.
+            "John Smith" is forty thousand people. "John Smith, Lafayette, LA" is a shelf.</li>
+            <li><strong>Prior addresses</strong> — optional, but this is the good stuff.
+            Nothing in this universe remembers your 2014 apartment as fondly as a data
+            broker does.</li>
+            <li><strong>Birth year</strong> — optional, disambiguation only. Just the
+            year. We are not a candle company.</li>
+            <li><strong>SSN</strong> — there is no SSN field. There will never be an SSN
+            field. A public-source website collecting SSNs behind dramatic lighting is a
+            phishing kit no matter who wrote it, and brokers don't need an SSN to find
+            you anyway. The amber box points at the thing that actually protects your
+            SSN, which is a credit freeze, which is free.</li>
+          </ul>
+          <p>When you press the button, exactly one HTTPS POST goes to our server. It
+          stores the form (encrypted), asks Brevo to email you a verification link, and
+          then nothing further happens until you click that link. The progress bar below
+          the button tracks that one real request — it moves when the request settles
+          and at no other time.</p>
+          <p id="intakeTruth" class="truth-status" aria-live="polite"></p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>CONSENT ARCHAEOLOGY is a self-help letter generator, not a law firm. Nothing here
+    is legal advice; every document is sent by you, as yourself, in your own name.</p>
+    <p>
+      <a href="https://github.com/grantdozier/consent-archaeology">source (MIT)</a> ·
+      <a href="https://github.com/grantdozier/consent-archaeology/blob/main/DESIGN.md">the hard rules</a> ·
+      built in Louisiana by <a href="https://doziertechgroup.com">Dozier Tech Group</a>
+    </p>
+  </footer>
+</div>
+
+<script src="assets/terminal.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/theater.js"></script>
+<script>
+'use strict';
+(function () {
+
+  /* ---------- boot sequence + real stats fetch ---------- */
+
+  const bootLog = document.getElementById('bootLog');
+  const statsTruth = document.getElementById('statsTruth');
+
+  async function boot() {
+    // Kick off the REAL stats request first; the boot lines type while it flies.
+    const statsPromise = CA.api.stats();
+    // Mark it handled immediately so a fast rejection doesn't fire
+    // unhandledrejection before we await it below. The await still
+    // sees (and reports) the real error.
+    statsPromise.catch(function () {});
+
+    await CA.term.boot(bootLog, [
+      '> CONSENT ARCHAEOLOGY // FIELD TERMINAL v0.1',
+      '> COMPARTMENT .......... HUMAN-BASELINE',
+      '> CLEARANCE ............ CIVILIAN (the highest we issue)',
+      '> CIPHER ............... AES-256-GCM',
+      { text: '> paranoia ............. OK', hold: 200 }
+    ]);
+
+    // The UPLINK line reports what the stats fetch ACTUALLY did.
+    try {
+      const s = await statsPromise;
+      await CA.term.line(bootLog, '> UPLINK ............... ESTABLISHED');
+      document.getElementById('statDemands').textContent = Number(s.demandsSent || 0).toLocaleString();
+      document.getElementById('statSubjects').textContent = Number(s.subjectsVerified || 0).toLocaleString();
+      document.getElementById('statBrokers').textContent = Number(s.brokersCovered || 0).toLocaleString();
+      document.getElementById('statsRow').hidden = false;
+      CA.term.status(statsTruth,
+        'The counters on the left are live aggregate totals from the server — total ' +
+        'demands filed, people verified, brokers on the list. No names, no cities; ' +
+        'the stats endpoint refuses specifics by design.');
+    } catch (err) {
+      await CA.term.line(bootLog, '> UPLINK ............... OFFLINE', { cls: 'amber' });
+      CA.term.status(statsTruth,
+        'We tried to load live stats and could not. ' + err.message +
+        ' The counters stay blank because numbers here are real or absent, never invented.', true);
+    }
+  }
+
+  boot();
+
+  /* ---------- reveal intake ---------- */
+
+  const revealBtn = document.getElementById('requestClearance');
+  const intakeSection = document.getElementById('intake');
+
+  function revealIntake(focus) {
+    intakeSection.hidden = false;
+    revealBtn.setAttribute('aria-expanded', 'true');
+    if (focus) {
+      document.getElementById('fullName').focus();
+    }
+    intakeSection.scrollIntoView({ behavior: CA.term.motionOK() ? 'smooth' : 'auto' });
+  }
+
+  revealBtn.addEventListener('click', function () { revealIntake(true); });
+  if (location.hash === '#intake') revealIntake(false);
+
+  /* ---------- intake submit: one real POST, honestly reported ---------- */
+
+  const form = document.getElementById('intakeForm');
+  const submitBtn = document.getElementById('intakeSubmit');
+  const theaterLog = document.getElementById('intakeTheaterLog');
+  const truthStatus = document.getElementById('intakeTruth');
+  const progressWrap = document.getElementById('intakeProgressWrap');
+  let bar = null;
+
+  form.addEventListener('submit', async function (ev) {
+    ev.preventDefault();
+    if (!form.reportValidity()) return;
+
+    const payload = {
+      fullName: form.fullName.value.trim(),
+      email: form.email.value.trim(),
+      city: form.city.value.trim(),
+      state: form.state.value.trim()
+    };
+    const phone = form.phone.value.trim();
+    if (phone) payload.phone = phone;
+    const prior = form.priorAddresses.value.split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean);
+    if (prior.length) payload.priorAddresses = prior;
+    const by = form.birthYear.value.trim();
+    if (by) payload.birthYear = parseInt(by, 10);
+
+    submitBtn.disabled = true;                      // real in-flight state
+    progressWrap.hidden = false;
+    if (!bar) bar = CA.theater.progress(document.getElementById('intakeProgress'));
+    bar.busy('TRANSMITTING');
+    CA.term.status(truthStatus, 'Sending your form to the server. One HTTPS POST, currently in flight…');
+
+    // The one real request. Narration types over it and stops when it settles.
+    const req = CA.api.intake(payload);
+    CA.theater.narrate(theaterLog, [
+      '> sealing envelope ..................',
+      '> couriering to secure compartment ..',
+      '> requesting countersign directive ..'
+    ], req);
+
+    try {
+      const res = await req;
+      bar.done('TRANSMISSION RECEIVED');
+      await CA.term.line(theaterLog, '> TRANSMISSION RECEIVED', { cls: 'loud' });
+      await CA.term.line(theaterLog, '> VERIFICATION DIRECTIVE ISSUED — CHECK YOUR INBOX');
+
+      try { sessionStorage.setItem('ca_intake_email', payload.email); } catch (e) {}
+
+      form.hidden = true;
+      const done = document.getElementById('intakeDone');
+      done.hidden = false;
+      document.getElementById('intakeDoneMsg').textContent =
+        'A verification link is on its way to ' + payload.email +
+        '. Click it to open your session. Subject reference: ' + (res.subjectId || '(issued server-side)');
+      CA.term.status(truthStatus,
+        'The server accepted your form and says it asked Brevo to email a verification ' +
+        'link to ' + payload.email + '. Click it — nothing else happens until you do. ' +
+        'If it is not there in a couple of minutes, check spam; automated mail lives a hard life. ' +
+        'Need a fresh link? Reload this page and submit again.');
+      document.getElementById('intakeDoneTitle').focus();
+    } catch (err) {
+      bar.fail('TRANSMISSION FAILED');
+      await CA.term.line(theaterLog, '> TRANSMISSION FAILED — SEE PLAIN-ENGLISH PANEL', { cls: 'amber' });
+      CA.theater.apiFail(truthStatus, err, 'Sending the form');
+      submitBtn.disabled = false;                   // retry is a real action
+    }
+  });
+
+})();
+</script>
+</body>
+</html>
