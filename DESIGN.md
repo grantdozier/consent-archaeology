@@ -254,9 +254,40 @@ consent-archaeology/
 
 ## 7. Style
 
-Vanilla JS. No framework, no build step, no npm runtime deps. Terminal aesthetic:
-phosphor green `#33ff66` on `#0a0e0a`, amber `#ffb000` for warnings, monospace
-(`ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`). Respect
-`prefers-reduced-motion` — kill scanlines, flicker, and typewriter effects when set.
-Fully responsive: on mobile the two panels stack, theater first, truth immediately below.
+Vanilla JS. No framework, no npm runtime deps, no frontend build step. (The only
+generator in the repo is `worker/scripts/build-templates.mjs`, which turns `legal/`
+into a Worker module — it never touches `docs/`.)
+
+**Palette — readability first.** The first cut was saturated `#33ff66` on `#0a0e0a`
+for *every word on the page*, with a glow on body copy and an animated scanline
+overlay. It reads as a terminal for about ten seconds and then makes your eyes
+vibrate: max-chroma green on near-black fringes on LCD subpixels, glow denies the
+eye a stable focal plane, and a moving pattern over text is the worst thing you can
+put in front of a reader. So:
+
+| token | value | use |
+|---|---|---|
+| `--ink` | `#c3d4c8` | body prose — low chroma, 11.6:1 |
+| `--phos` | `#6ee89a` | **accent only** — headings, keywords, status marks |
+| `--amber` | `#e0a34a` | warnings, truth-panel heads, the SSN gag |
+| `--ink-dim` | `#8fa396` | secondary prose |
+| `--phos-dim` | `#4f9e70` | rules, meta, quiet labels |
+| `--bg` | `#0c100e` | lifted off pure black to cut halation |
+
+Rules that follow from it: saturated green is **never** the colour of a paragraph;
+no `text-shadow` on body text; no scanlines, flicker, or CRT overlay; `line-height`
+at least 1.65 for monospace prose. Contrast is measured, not asserted — everything
+above is AA or better, and the two AA-only tokens are for short labels, never copy.
+
+**No decorative block glyphs in `content:`.** `▓`/`░`/`█` render as dithered
+checkerboards, box-drawing glyphs have inconsistent advance widths across monospace
+fonts (which is why the ASCII wordmark rendered visibly crooked), and a trailing
+space inside `content:` collapses, so markers end up flush against the text. Draw
+markers with CSS instead. Note the trap: `display:flex` fixes the gap only on
+elements containing **plain text** — on a paragraph with inline children
+(`<strong>`, `<a>`) it promotes each to a flex item and shatters the sentence into
+columns. Use a hanging indent there.
+
+Respect `prefers-reduced-motion` — kill the typewriter and caret when set. Fully
+responsive: panels stack under 880px, theater first, truth immediately below.
 Keyboard accessible, real `<label>`s, visible focus rings. The bit never breaks a11y.
