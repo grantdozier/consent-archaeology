@@ -15,6 +15,8 @@
 
 [**▶ ENTER THE FACILITY**](https://dig.doziertechgroup.com) · [How it works](#how-it-works) · [What it refuses to do](#what-this-refuses-to-do) · [Legal basis](legal/LEGAL-BASIS.md)
 
+**New to this? →&nbsp;[Read the plain-English version](https://dig.doziertechgroup.com/how-it-works.html)** — no jargon, no spy movie, written so anyone can follow it.
+
 </div>
 
 ---
