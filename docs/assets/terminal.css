@@ -179,10 +179,11 @@ code { font-family: inherit; color: var(--amber); }
   display: grid;
   grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
   gap: 1.25rem;
-  /* stretch, not start: the theater pane is usually shorter than the
-     truth pane, and two boxes of different heights sitting on a shared
-     top edge read as misaligned rather than as a pair. */
-  align-items: stretch;
+  /* start, not stretch: the theater pane holds a short boot log and the
+     truth pane holds prose, so stretching leaves a tall empty box, which
+     looks worse than two panes of honest different lengths sharing a top
+     edge. The fix for the imbalance is shorter prose, not a taller box. */
+  align-items: start;
   margin: 1.25rem 0;
 }
 
