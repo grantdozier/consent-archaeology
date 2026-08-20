@@ -42,10 +42,6 @@
         which is at least honest. The source is on
         <a href="https://github.com/grantdozier/consent-archaeology">GitHub</a>
         if you would rather read it than run it.</p>
-        <p>The intake form needs JavaScript, so there is nothing here for you to
-        submit. If you want to support the project anyway, that link works
-        without any of this:
-        <a href="https://www.paypal.com/ncp/payment/QNK2BLFLVUR9L" rel="noopener noreferrer">chip in via PayPal (Dozier Tech Group)</a>.</p>
       </section>
     </noscript>
 
@@ -196,7 +192,6 @@
             <p class="ink" id="intakeDoneMsg"></p>
             <ul class="next-steps" id="intakeNextSteps" hidden></ul>
             <div class="btn-row" id="intakeDoneActions" hidden></div>
-            <div id="intakeSupport"></div>
           </div>
         </div>
 
@@ -255,7 +250,6 @@
 <script src="assets/terminal.js"></script>
 <script src="assets/api.js"></script>
 <script src="assets/theater.js"></script>
-<script src="assets/support.js"></script>
 <script>
 'use strict';
 (function () {
@@ -325,8 +319,8 @@
    * DESIGN GOAL, stated plainly because it looks like a rule violation and
    * is not: pressing TRANSMIT always ends on the confirmation panel. Backend
    * down, DNS gone, CORS misconfigured, mail provider refusing, our own
-   * script throwing — the visitor gets an answer, a next step, and the
-   * support link, instead of a disabled button and silence.
+   * script throwing — the visitor gets an answer and a next step, instead
+   * of a disabled button and silence.
    *
    * That is NOT house rule #1 being relaxed. #1 says never fake success, and
    * nothing here does: the panel's status line reports exactly what the
@@ -351,7 +345,6 @@
   const doneMsg = document.getElementById('intakeDoneMsg');
   const nextSteps = document.getElementById('intakeNextSteps');
   const doneActions = document.getElementById('intakeDoneActions');
-  const supportSlot = document.getElementById('intakeSupport');
   let bar = null;
 
   const CONTACT = 'clearance@doziertechgroup.com';
@@ -515,34 +508,6 @@
     }
     addAction('EMAIL A HUMAN', null,
       'mailto:' + CONTACT + '?subject=' + encodeURIComponent('CONSENT ARCHAEOLOGY intake'));
-
-    // The support block, on every outcome, always UNDER the status line —
-    // never in place of it. See assets/support.js.
-    //
-    // Wrapped, because this whole panel exists to survive things going wrong,
-    // and "assets/support.js failed to load" is one of the things that can go
-    // wrong. If the module is missing we hand-build the one element that
-    // matters rather than throwing from inside the error handler.
-    if (!supportSlot.childElementCount) {
-      try {
-        CA.support.render(supportSlot, {
-          compact: true,
-          heading: 'WHILE YOU WAIT — STRICTLY VOLUNTARY',
-          blurb: 'This is free and stays free. If it is worth something to you, ' +
-                 'that link goes to Dozier Tech Group and pays for the hosting and ' +
-                 'the mail that carries your verification link. Ignore it with a ' +
-                 'clear conscience; we will not ask twice.'
-        });
-      } catch (e) {
-        const a = document.createElement('a');
-        a.className = 'btn';
-        a.href = 'https://www.paypal.com/ncp/payment/QNK2BLFLVUR9L';
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        a.textContent = 'CHIP IN VIA PAYPAL';
-        supportSlot.appendChild(a);
-      }
-    }
 
     say(opts.truth || opts.message || '', mode !== 'ok');
     try { doneTitle.focus(); } catch (e) { /* focus is a nicety, not a requirement */ }

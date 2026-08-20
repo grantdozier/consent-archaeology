@@ -462,40 +462,10 @@ dashboard** (§0a):
 5. Send a test magic-link email from the deployed API and confirm it lands in an
    inbox, not spam.
 
-## 7b. PayPal — the live payment method
-
-PayPal is the one donation method that works with **no deploy step at all**. The
-hosted-checkout URL is committed:
-
-```
-https://www.paypal.com/ncp/payment/QNK2BLFLVUR9L      ← Dozier Tech Group
-```
-
-It lives in exactly one place — `docs/assets/support.js`, `CA.support.PAY_URL` — and
-`docs/dossier.html` carries a copy in its static markup for the results-page button.
-**If the account ever moves, change both** (`grep -rn 'paypal.com/ncp' docs/`), and
-nothing else in the frontend needs touching.
-
-Where it appears:
-
-- The **intake confirmation panel** (`docs/index.html`) — on every outcome, including
-  failures, always rendered *under* the honest status line. See DESIGN.md §5a for why
-  this is the one exception to "donations only after results", and for the condition
-  attached to it.
-- The **dossier donation panel** (`docs/dossier.html`), alongside the Stripe and Venmo
-  buttons that are still waiting on the two sections below.
-- The **`<noscript>` block** on the splash page, since it needs no JavaScript to work.
-
-"No thanks — never ask again" removes this button too, not just the Stripe and Venmo
-ones. Verify that in the smoke test; a pay link surviving a dismissal is the dark
-pattern DESIGN.md §5 forbids.
-
 ## 8. Stripe — Payment Link with Apple Pay
 
-Stripe (Apple Pay) and Venmo join PayPal on the dossier panel, shown only **after** the
-dossier renders (DESIGN.md §5). Until the two `TODO(deploy)` links below are replaced,
-those buttons 404 and the panel's own copy says so — PayPal above carries the flow in
-the meantime.
+Donations are Stripe (Apple Pay) + Venmo, shown only **after** the dossier renders
+(DESIGN.md §5).
 
 1. **Apple Pay domain verification** (required before Apple Pay works): Stripe
    dashboard → **Settings → Payments → Payment method domains** → add
@@ -568,12 +538,9 @@ no matter how good the terminal looks.
       (localStorage + server flag — reload, different device, still gone).
 - [ ] Stripe test payment completes and lands on
       `https://doziertechgroup.com/dig/thanks`; Apple Pay sheet appears on Safari.
-- [ ] PayPal button on the dossier panel opens the Dozier Tech Group checkout.
-- [ ] "No thanks — never ask again" removes the PayPal, Stripe *and* Venmo buttons.
 - [ ] Intake with the API unreachable (block the host in devtools, or point
       `API_BASE` at a dead name) still lands on the confirmation panel, shows
-      "DELIVERY UNCONFIRMED" rather than "check your inbox", and offers both the
-      retry button and the PayPal link.
+      "DELIVERY UNCONFIRMED" rather than "check your inbox", and offers a retry.
 - [ ] Intake with a full state name ("Louisiana") and a single-word name both
       succeed — neither is a 400 any more.
 - [ ] Venmo handle placeholder replaced; deep link opens Venmo, fallback URL works.

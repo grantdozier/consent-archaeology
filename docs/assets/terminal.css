@@ -700,46 +700,12 @@ pre.letter {
   line-height: 1.6;
 }
 
-/* ---------- support block (shared: intake confirmation + dossier) ----------
-   Built by assets/support.js so every surface points at the same account.
-   Deliberately quiet: a bordered box with one link, no colour-screaming, no
-   motion. It sits BELOW the honest status line on the confirmation screen —
-   never above it, never in place of it. */
-
-.support-block {
-  margin-top: 1.6rem;
-  padding: 1rem 1.1rem 1.1rem;
-  border: 1px solid var(--edge-bright);
-  border-left: 3px solid var(--phos-dim);
-  background: var(--bg-raised);
-}
-
-.support-block.support-compact { margin-top: 1.2rem; padding: 0.85rem 0.95rem 0.95rem; }
-
-.support-head {
-  margin: 0 0 0.35rem;
-  font-size: 0.78rem;
-  letter-spacing: 0.18em;
-  color: var(--phos);
-  font-weight: 600;
-}
-
-.support-block .btn-row { margin-top: 0.7rem; }
-
-.support-block .small {
-  margin: 0.7rem 0 0;
-  font-size: 0.78rem;
-  color: var(--phos-dim);
-  line-height: 1.6;
-}
-
 /* ---------- intake confirmation ----------
    One panel, three honest states. `ok` = the server confirmed it sent the
    verification email. `deferred` = we could not confirm delivery (backend
    unreachable, mail provider refused, our own script threw) and the copy
    says so. `fixable` = the server rejected one field and told us which.
-   The support block renders in all three; the status line differs in all
-   three. That pairing is the whole point — see support.js. */
+   All three carry a next step; none of them dead-ends. */
 
 .intake-done {
   margin-top: 1.2rem;

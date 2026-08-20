@@ -166,10 +166,6 @@
             <!-- TODO(deploy): replace with the real Stripe Payment Link (Apple Pay
                  enabled; domain-verified on doziertechgroup.com; return URL
                  https://doziertechgroup.com/dig/thanks). -->
-            <!-- The one payment link that is real today. Its URL lives in
-                 assets/support.js so this page and the intake confirmation
-                 can never drift onto different accounts. -->
-            <a class="btn" id="paypalLink" href="https://www.paypal.com/ncp/payment/QNK2BLFLVUR9L" target="_blank" rel="noopener noreferrer">PAYPAL (DOZIER TECH GROUP)</a>
             <a class="btn" id="applePayLink" href="https://buy.stripe.com/TODO_STRIPE_PAYMENT_LINK" rel="noopener"> APPLE PAY (VIA STRIPE)</a>
             <!-- TODO(deploy): swap TODO_VENMO_HANDLE for Grant's real Venmo handle
                  in BOTH links below. -->
@@ -184,12 +180,10 @@
           <p>Everything above was free and stays free — the sweep, the letters, the
           locker. Running this costs almost nothing because it was built cheap on
           purpose. Building it cost time.</p>
-          <p>If it was worth something to you, the PayPal button works today and goes to
-          Dozier Tech Group. The other two are wired but waiting on a deploy step, and
-          they say so rather than pretending. If not, the last button makes us stop
-          asking — permanently, on this device and on your verified record server-side.
-          Not "for 30 days." Not "maybe later." There is no later. The no is stored in a
-          database column, where product managers cannot reach it.</p>
+          <p>If it was worth something to you, there are two buttons. If not, the third
+          button makes us stop asking — permanently, on this device and on your verified
+          record server-side. Not "for 30 days." Not "maybe later." There is no later.
+          The no is stored in a database column, where product managers cannot reach it.</p>
           <p class="small">Donations fund hosting and development. They do not unlock
           features, buy priority, or create any obligation to you beyond the ones we
           already accepted by publishing this.</p>
@@ -503,13 +497,9 @@
         'failed though (' + err.message + '), so a different device might show the ask ' +
         'once more. We tried, and we are telling you rather than pretending.', true);
     }
-    // Retire the buttons either way; the ask is over. Every one of them —
-    // leaving a live pay link behind after "never ask again" is the ask
-    // continuing by other means.
-    ['paypalLink', 'applePayLink', 'venmoLink'].forEach(function (id) {
-      const el = document.getElementById(id);
-      if (el) el.remove();
-    });
+    // Retire the buttons either way; the ask is over.
+    document.getElementById('applePayLink').remove();
+    document.getElementById('venmoLink').remove();
     btn.remove();
   });
 
