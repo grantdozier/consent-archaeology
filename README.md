@@ -180,9 +180,13 @@ Full instructions, including every secret you need and where to put it, in
 
 <div align="center">
 
-**Free forever.** There is a donate button. It appears *after* you get your results,
-never before, and if you dismiss it we never ask you again — not on this device, not on
-any device, not in thirty days. That's a promise implemented in the schema.
+**Free forever.** There is a donate button. On the results page it appears *after* you
+get your results, never before, and if you dismiss it we never ask you again — not on
+this device, not on any device, not in thirty days. That's a promise implemented in the
+schema. It also sits on the sign-up confirmation screen, under a status line that tells
+you the honest truth about whether your verification email actually went out — including
+when it didn't. Being asked for money is never allowed to be the reason a real failure
+goes unmentioned.
 
 MIT licensed · Built in Louisiana by [Dozier Tech Group](https://doziertechgroup.com)
 

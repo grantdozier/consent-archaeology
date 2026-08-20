@@ -231,7 +231,11 @@ See `case-files/` for the worked example.
 
 ## 5. Donation flow
 
-- Appears **only after** the dossier renders. Never gates a feature. Everything is free.
+- Appears **only after** the dossier renders — with one deliberate exception, below.
+  Never gates a feature. Everything is free.
+- **PayPal** — `https://www.paypal.com/ncp/payment/QNK2BLFLVUR9L` (Dozier Tech Group
+  hosted checkout). This is the one method that is live today, and its URL lives in
+  exactly one place, `docs/assets/support.js`. Change it there and every surface follows.
 - **Apple Pay** — Stripe Payment Link, Apple Pay enabled. Requires domain verification on
   `doziertechgroup.com`.
 - **Venmo** — deep link `venmo://paycharge?txn=pay&recipients=<HANDLE>&note=...`, with an
@@ -240,7 +244,35 @@ See `case-files/` for the worked example.
   `https://doziertechgroup.com/dig/thanks`.
 - **Dismissal is permanent.** "No thanks" → `localStorage` flag + server-side flag on the
   verified subject. Never ask that person again, on any device, forever. No dark patterns,
-  no re-prompt after N days, no "are you sure?" interstitial.
+  no re-prompt after N days, no "are you sure?" interstitial. Dismissal removes *every*
+  pay button on the page, not just the primary one.
+
+### 5a. The intake confirmation exception
+
+The intake confirmation panel also carries the PayPal link — before any results exist.
+That is the single exception to "only after the dossier renders", and it comes with a
+condition that is not optional:
+
+**The support block is rendered UNDER the honest status line, never in place of it.**
+
+Pressing TRANSMIT always ends on the confirmation panel, including when the backend is
+unreachable, the mail provider refuses, or the page's own script throws. Someone who
+showed up and hit a failure is still someone who showed up, and stranding them on a
+disabled button with no next step helps nobody. But the panel has three states and the
+copy differs in all three:
+
+| state | when | headline | what it says |
+|---|---|---|---|
+| `ok` | server confirmed the mail provider took the message | REQUEST RECEIVED — CHECK YOUR INBOX | check your inbox |
+| `deferred` | anything we could not confirm | REQUEST RECEIVED — DELIVERY UNCONFIRMED | the email may never come, here is a retry and a human to email |
+| `fixable` | server named a field the visitor can correct | ONE FIELD NEEDS A SECOND LOOK | which field, and the form back with it focused |
+
+This does **not** relax house rule #1. #1 forbids reporting success that did not happen;
+it does not require a dead end when something fails. `verificationSent` is still never
+`true` unless the mail provider actually accepted the message, and the `deferred` panel
+says in plain English that the link may never arrive. Asking for money is never permitted
+to be the reason a real failure goes unmentioned — if you find yourself softening the
+status line to make the ask land better, you have broken the rule that matters.
 
 ---
 

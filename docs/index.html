@@ -42,6 +42,10 @@
         which is at least honest. The source is on
         <a href="https://github.com/grantdozier/consent-archaeology">GitHub</a>
         if you would rather read it than run it.</p>
+        <p>The intake form needs JavaScript, so there is nothing here for you to
+        submit. If you want to support the project anyway, that link works
+        without any of this:
+        <a href="https://www.paypal.com/ncp/payment/QNK2BLFLVUR9L" rel="noopener noreferrer">chip in via PayPal (Dozier Tech Group)</a>.</p>
       </section>
     </noscript>
 
@@ -182,9 +186,17 @@
             <div id="intakeProgress" class="progress" aria-label="Intake transmission"></div>
           </div>
 
-          <div id="intakeDone" hidden>
-            <h3 tabindex="-1" id="intakeDoneTitle" class="amber">■ AWAITING COUNTERSIGN</h3>
+          <!-- The confirmation panel. Everyone who presses the button ends up
+               here — there is no path through the submit handler that leaves a
+               visitor staring at a dead form, including the path where our own
+               script throws. What CHANGES between outcomes is the status line
+               and the offered next step, never whether they got an answer. -->
+          <div id="intakeDone" class="intake-done" hidden>
+            <h3 tabindex="-1" id="intakeDoneTitle" class="amber">■ REQUEST RECEIVED</h3>
             <p class="ink" id="intakeDoneMsg"></p>
+            <ul class="next-steps" id="intakeNextSteps" hidden></ul>
+            <div class="btn-row" id="intakeDoneActions" hidden></div>
+            <div id="intakeSupport"></div>
           </div>
         </div>
 
@@ -243,6 +255,7 @@
 <script src="assets/terminal.js"></script>
 <script src="assets/api.js"></script>
 <script src="assets/theater.js"></script>
+<script src="assets/support.js"></script>
 <script>
 'use strict';
 (function () {
@@ -307,73 +320,438 @@
   revealBtn.addEventListener('click', function () { revealIntake(true); });
   if (location.hash === '#intake') revealIntake(false);
 
-  /* ---------- intake submit: one real POST, honestly reported ---------- */
+  /* ---------- intake submit ----------
+   *
+   * DESIGN GOAL, stated plainly because it looks like a rule violation and
+   * is not: pressing TRANSMIT always ends on the confirmation panel. Backend
+   * down, DNS gone, CORS misconfigured, mail provider refusing, our own
+   * script throwing — the visitor gets an answer, a next step, and the
+   * support link, instead of a disabled button and silence.
+   *
+   * That is NOT house rule #1 being relaxed. #1 says never fake success, and
+   * nothing here does: the panel's status line reports exactly what the
+   * server said or exactly what failed, in plain English, every time. What
+   * is guaranteed is that they always LAND somewhere; what is never
+   * guaranteed is that we tell them a link is coming when it is not.
+   *
+   *   ok       — server confirmed it handed the email to the provider.
+   *   deferred — we could not confirm that. Says so, offers a resend, and
+   *              gives an address they can reach a human at.
+   *   fixable  — the server named a field the visitor can correct. Says
+   *              which, and hands the form back with that field focused.
+   */
 
   const form = document.getElementById('intakeForm');
   const submitBtn = document.getElementById('intakeSubmit');
   const theaterLog = document.getElementById('intakeTheaterLog');
   const truthStatus = document.getElementById('intakeTruth');
   const progressWrap = document.getElementById('intakeProgressWrap');
+  const done = document.getElementById('intakeDone');
+  const doneTitle = document.getElementById('intakeDoneTitle');
+  const doneMsg = document.getElementById('intakeDoneMsg');
+  const nextSteps = document.getElementById('intakeNextSteps');
+  const doneActions = document.getElementById('intakeDoneActions');
+  const supportSlot = document.getElementById('intakeSupport');
   let bar = null;
+
+  const CONTACT = 'clearance@doziertechgroup.com';
+
+  /* Decoration, safely. Every call into the theater/terminal modules from the
+   * submit path goes through one of these, so a missing or broken asset file
+   * costs a visitor an animation, never their submission. */
+  function barCall(method, label) {
+    try { if (bar && bar[method]) bar[method](label); } catch (e) { /* decoration */ }
+  }
+  function say(text, isError) {
+    try { CA.term.status(truthStatus, text, isError); }
+    catch (e) { truthStatus.textContent = text; }
+  }
+  async function log(text, cls) {
+    try { await CA.term.line(theaterLog, text, { cls: cls }); } catch (e) { /* decoration */ }
+  }
+
+  // Submission bookkeeping for the safety nets at the bottom of this file.
+  let inFlight = false;
+  let settled = false;
+  let watchdog = null;
+  let lastPayload = null;
+
+  /* ---- input normalisation ----
+   * People type "Louisiana", " la ", "La." and "LOUISIANA, USA". The API
+   * wants a two-letter code and 400s on anything else. Rejecting a correct
+   * answer because of its spelling is a bug in us, not a mistake by them,
+   * so normalise here (and again server-side, so a stale cached copy of
+   * this file cannot reintroduce the 400). */
+
+  const STATE_CODES = {
+    alabama:'AL', alaska:'AK', arizona:'AZ', arkansas:'AR', california:'CA',
+    colorado:'CO', connecticut:'CT', delaware:'DE', districtofcolumbia:'DC',
+    washingtondc:'DC', florida:'FL', georgia:'GA', hawaii:'HI', idaho:'ID',
+    illinois:'IL', indiana:'IN', iowa:'IA', kansas:'KS', kentucky:'KY',
+    louisiana:'LA', maine:'ME', maryland:'MD', massachusetts:'MA',
+    michigan:'MI', minnesota:'MN', mississippi:'MS', missouri:'MO',
+    montana:'MT', nebraska:'NE', nevada:'NV', newhampshire:'NH',
+    newjersey:'NJ', newmexico:'NM', newyork:'NY', northcarolina:'NC',
+    northdakota:'ND', ohio:'OH', oklahoma:'OK', oregon:'OR',
+    pennsylvania:'PA', rhodeisland:'RI', southcarolina:'SC',
+    southdakota:'SD', tennessee:'TN', texas:'TX', utah:'UT', vermont:'VT',
+    virginia:'VA', washington:'WA', westvirginia:'WV', wisconsin:'WI',
+    wyoming:'WY', puertorico:'PR', guam:'GU', virginislands:'VI',
+    americansamoa:'AS', northernmarianaislands:'MP'
+  };
+
+  function tidy(v) {
+    return String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  }
+
+  function normalizeState(raw) {
+    const v = tidy(raw).replace(/[.,]+$/, '');
+    if (/^[A-Za-z]{2}$/.test(v)) return v.toUpperCase();
+    const key = v.toLowerCase().replace(/[^a-z]/g, '');
+    return STATE_CODES[key] || v;
+  }
+
+  function buildPayload() {
+    const payload = {
+      fullName: tidy(form.fullName.value),
+      email: tidy(form.email.value).toLowerCase(),
+      city: tidy(form.city.value).replace(/[.,]+$/, ''),
+      state: normalizeState(form.state.value)
+    };
+    const phone = tidy(form.phone.value);
+    if (phone) payload.phone = phone;
+    const prior = form.priorAddresses.value
+      .split(/\r?\n/).map(tidy).filter(Boolean).slice(0, 10);
+    if (prior.length) payload.priorAddresses = prior;
+    const by = tidy(form.birthYear.value);
+    if (/^\d{4}$/.test(by)) payload.birthYear = parseInt(by, 10);
+    return payload;
+  }
+
+  /* ---- the confirmation panel ---- */
+
+  // Plain-English translation of the 400s the API can return. Anything not
+  // listed here is treated as "not the visitor's fault" and lands on
+  // `deferred` rather than telling them to fix a field we cannot name.
+  const FIXABLE = {
+    invalid_fullName: { field: 'fullName', say: 'We could not read the name — it needs to be between 2 and 120 characters.' },
+    invalid_email:    { field: 'email',    say: 'That email address did not parse. Check for a typo or a stray space.' },
+    invalid_city:     { field: 'city',     say: 'The city field came through empty or too long (80 characters max).' },
+    invalid_state:    { field: 'state',    say: 'We could not turn that into a US state. A two-letter code like LA works.' },
+    invalid_phone:    { field: 'phone',    say: 'The phone number has characters we cannot use. Digits, spaces, dashes and parentheses only — or leave it blank, it is optional.' },
+    invalid_birthYear:{ field: 'birthYear',say: 'The birth year needs to be a four-digit year between 1900 and now — or blank, it is optional.' },
+    invalid_priorAddresses: { field: 'priorAddresses', say: 'Prior addresses: up to 10 lines, each under 200 characters.' }
+  };
+
+  function firstErrorCode(err) {
+    const raw = (err && err.detail && err.detail.error) || '';
+    return String(raw).split(':')[0].trim();
+  }
+
+  function addAction(label, onClick, href) {
+    const el = document.createElement(href ? 'a' : 'button');
+    el.className = 'btn btn-quiet';
+    if (href) {
+      el.href = href;
+      el.rel = 'noopener';
+    } else {
+      el.type = 'button';
+      el.addEventListener('click', onClick);
+    }
+    el.textContent = label;
+    doneActions.appendChild(el);
+    doneActions.hidden = false;
+    return el;
+  }
+
+  /**
+   * Render the panel. Called exactly once per submit, from one place, by
+   * every path including the catch-alls. Idempotent: a late safety net
+   * firing after a real outcome cannot overwrite it.
+   */
+  function showResult(mode, opts) {
+    if (settled) return;
+    settled = true;
+    inFlight = false;
+    if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+
+    opts = opts || {};
+    form.hidden = true;
+    done.hidden = false;
+    done.classList.toggle('deferred', mode !== 'ok');
+    doneTitle.classList.toggle('amber', mode !== 'ok');   // amber means "read this"
+    doneTitle.textContent = opts.title || '■ REQUEST RECEIVED';
+    doneMsg.textContent = opts.message || '';
+
+    nextSteps.textContent = '';
+    if (opts.steps && opts.steps.length) {
+      opts.steps.forEach(function (t) {
+        const li = document.createElement('li');
+        li.textContent = t;
+        nextSteps.appendChild(li);
+      });
+      nextSteps.hidden = false;
+    } else {
+      nextSteps.hidden = true;
+    }
+
+    doneActions.textContent = '';
+    doneActions.hidden = true;
+    if (opts.retry) {
+      addAction(opts.retryLabel || 'TRY THE TRANSMISSION AGAIN', function () {
+        // Hand the form back exactly as they filled it in — nothing is
+        // cleared — and let them press the real button again.
+        settled = false;
+        done.hidden = true;
+        form.hidden = false;
+        submitBtn.disabled = false;
+        progressWrap.hidden = true;
+        if (opts.focusField && form[opts.focusField]) {
+          form[opts.focusField].focus();
+        } else {
+          submitBtn.focus();
+        }
+      });
+    }
+    addAction('EMAIL A HUMAN', null,
+      'mailto:' + CONTACT + '?subject=' + encodeURIComponent('CONSENT ARCHAEOLOGY intake'));
+
+    // The support block, on every outcome, always UNDER the status line —
+    // never in place of it. See assets/support.js.
+    //
+    // Wrapped, because this whole panel exists to survive things going wrong,
+    // and "assets/support.js failed to load" is one of the things that can go
+    // wrong. If the module is missing we hand-build the one element that
+    // matters rather than throwing from inside the error handler.
+    if (!supportSlot.childElementCount) {
+      try {
+        CA.support.render(supportSlot, {
+          compact: true,
+          heading: 'WHILE YOU WAIT — STRICTLY VOLUNTARY',
+          blurb: 'This is free and stays free. If it is worth something to you, ' +
+                 'that link goes to Dozier Tech Group and pays for the hosting and ' +
+                 'the mail that carries your verification link. Ignore it with a ' +
+                 'clear conscience; we will not ask twice.'
+        });
+      } catch (e) {
+        const a = document.createElement('a');
+        a.className = 'btn';
+        a.href = 'https://www.paypal.com/ncp/payment/QNK2BLFLVUR9L';
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = 'CHIP IN VIA PAYPAL';
+        supportSlot.appendChild(a);
+      }
+    }
+
+    say(opts.truth || opts.message || '', mode !== 'ok');
+    try { doneTitle.focus(); } catch (e) { /* focus is a nicety, not a requirement */ }
+  }
+
+  /** Every non-ok ending funnels through here so the copy stays consistent. */
+  function confirmDeferred(reason, email) {
+    // ApiError messages do not all end in punctuation, and this one is glued
+    // to the sentence after it. Close it off so the truth panel reads as prose.
+    reason = String(reason || 'the reason was not reported').trim();
+    if (!/[.!?]$/.test(reason)) reason += '.';
+
+    showResult('deferred', {
+      title: '■ REQUEST RECEIVED — DELIVERY UNCONFIRMED',
+      message:
+        'Your form left this browser, but we could not get confirmation back that the ' +
+        'verification email went out' + (email ? ' to ' + email : '') + '. It may still ' +
+        'arrive. It may not. We are telling you rather than letting you watch an inbox ' +
+        'for something that might never come.',
+      steps: [
+        'Give it five minutes and check your inbox, then your spam folder.',
+        'Nothing arrived? Press the retry button below — resubmitting is safe and creates no duplicate record.',
+        'Still nothing? Email ' + CONTACT + ' and a human will sort it out.',
+        'Nothing was lost on your end: no sweep runs and no letters are drafted until you click a verification link, so an unsent email means nothing happened at all.'
+      ],
+      retry: true,
+      truth: 'What actually went wrong: ' + reason + ' The panel above says "unconfirmed" ' +
+             'rather than "sent" because we did not get a confirmation, and this site does ' +
+             'not report outcomes it cannot see.'
+    });
+  }
 
   form.addEventListener('submit', async function (ev) {
     ev.preventDefault();
+    if (inFlight) return;
     if (!form.reportValidity()) return;
 
-    const payload = {
-      fullName: form.fullName.value.trim(),
-      email: form.email.value.trim(),
-      city: form.city.value.trim(),
-      state: form.state.value.trim()
-    };
-    const phone = form.phone.value.trim();
-    if (phone) payload.phone = phone;
-    const prior = form.priorAddresses.value.split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean);
-    if (prior.length) payload.priorAddresses = prior;
-    const by = form.birthYear.value.trim();
-    if (by) payload.birthYear = parseInt(by, 10);
+    // Normalise the visible fields first so the visitor sees what we send.
+    form.state.value = normalizeState(form.state.value);
+    form.city.value = tidy(form.city.value).replace(/[.,]+$/, '');
+    form.fullName.value = tidy(form.fullName.value);
+
+    const payload = buildPayload();
+    lastPayload = payload;
+    inFlight = true;
+    settled = false;
 
     submitBtn.disabled = true;                      // real in-flight state
     progressWrap.hidden = false;
-    if (!bar) bar = CA.theater.progress(document.getElementById('intakeProgress'));
-    bar.busy('TRANSMITTING');
-    CA.term.status(truthStatus, 'Sending your form to the server. One HTTPS POST, currently in flight…');
 
-    // The one real request. Narration types over it and stops when it settles.
-    const req = CA.api.intake(payload);
-    CA.theater.narrate(theaterLog, [
-      '> sealing envelope ..................',
-      '> couriering to secure compartment ..',
-      '> requesting countersign directive ..'
-    ], req);
+    // The bar and the typed narration are decoration. If either module failed
+    // to load, that is not a reason to abandon a real submission — `say()`
+    // degrades to a no-op and the POST goes out regardless. `bar` may be null
+    // from here down; every use goes through barCall().
+    if (!bar) {
+      try { bar = CA.theater.progress(document.getElementById('intakeProgress')); } catch (e) { bar = null; }
+    }
+    barCall('busy', 'TRANSMITTING');
+    say('Sending your form to the server. One HTTPS POST, currently in flight…');
+
+    // Belt and braces: api.js already aborts at 12s, but a bug ANYWHERE after
+    // that — in the narration, in our own rendering — must not leave someone
+    // watching a spinner. If nothing has settled by 25s, the panel opens
+    // anyway and says we lost track of the request, which is the truth.
+    watchdog = setTimeout(function () {
+      barCall('fail', 'NO RESPONSE');
+      confirmDeferred('the request never settled and we stopped tracking it after 25 seconds.', payload.email);
+    }, 25000);
 
     try {
-      const res = await req;
-      bar.done('TRANSMISSION RECEIVED');
-      await CA.term.line(theaterLog, '> TRANSMISSION RECEIVED', { cls: 'loud' });
-      await CA.term.line(theaterLog, '> VERIFICATION DIRECTIVE ISSUED — CHECK YOUR INBOX');
+      // The one real request. Narration types over it and stops when it settles.
+      const req = CA.api.intake(payload);
+      try {
+        CA.theater.narrate(theaterLog, [
+          '> sealing envelope ..................',
+          '> couriering to secure compartment ..',
+          '> requesting countersign directive ..'
+        ], req);
+      } catch (e) { /* narration is decoration */ }
 
+      let res;
+      try {
+        res = await req;
+      } catch (err) {
+        barCall('fail', 'TRANSMISSION INCOMPLETE');
+        await log('> COUNTERSIGN DIRECTIVE UNCONFIRMED', 'amber');
+
+        const status = (err && err.status) || 0;
+        const code = firstErrorCode(err);
+
+        // 429: not a failure. They already have links sitting in an inbox.
+        if (status === 429) {
+          showResult('ok', {
+            title: '■ REQUEST RECEIVED — LINKS ALREADY SENT',
+            message:
+              'We have already sent several verification links to ' + payload.email +
+              ' in the last hour, so we stopped sending more. The most recent one is valid — ' +
+              'check your inbox and your spam folder.',
+            steps: [
+              'Open the newest CONSENT ARCHAEOLOGY email and click the link inside.',
+              'Links expire 15 minutes after they are sent, so use the newest one.',
+              'If the hour passes with nothing in either folder, come back and submit again.'
+            ],
+            truth: 'The server rate-limits verification emails to five per address per hour. ' +
+                   'That cap exists so this form cannot be used to flood someone else\'s inbox.'
+          });
+          return;
+        }
+
+        // The R1 SSN rejection: long, deliberate, and worth showing verbatim.
+        if (status === 400 && /Social Security/i.test((err.detail && err.detail.error) || '')) {
+          showResult('fixable', {
+            title: '■ ONE THING TO REMOVE FIRST',
+            message: err.detail.error,
+            retry: true,
+            retryLabel: 'BACK TO THE FORM',
+            truth: 'The server rejected the submission before storing anything, because ' +
+                   'something in it looked like a Social Security Number. Nothing was saved.'
+          });
+          return;
+        }
+
+        // A named field the visitor can actually fix.
+        const fix = status === 400 ? FIXABLE[code] : null;
+        if (fix) {
+          showResult('fixable', {
+            title: '■ ONE FIELD NEEDS A SECOND LOOK',
+            message: fix.say + ' Nothing was saved — fix that one field and send it again.',
+            retry: true,
+            retryLabel: 'FIX AND RESEND',
+            focusField: fix.field,
+            truth: 'The server rejected the form with: ' + (err.detail && err.detail.error) +
+                   '. It stored nothing and sent nothing.'
+          });
+          return;
+        }
+
+        // Everything else — unreachable backend, timeout, CORS, 5xx, an
+        // unrecognised 400 — is ours to own, not theirs to fix.
+        confirmDeferred(err && err.message ? err.message : String(err), payload.email);
+        return;
+      }
+
+      // ---- the server answered 200 ----
+      // It answers verificationSent:false when it stored the subject but the
+      // mail provider would not take the message. That is a real, honest
+      // "received but undelivered", and it renders as such.
+      if (res && res.verificationSent === false) {
+        barCall('done', 'RECORD STORED — EMAIL PENDING');
+        await log('> RECORD STORED', 'loud');
+        await log('> COURIER UNAVAILABLE — DIRECTIVE QUEUED', 'amber');
+        try { sessionStorage.setItem('ca_intake_email', payload.email); } catch (e) {}
+        confirmDeferred(
+          'the server stored your form but the mail provider refused the verification email' +
+          (res.deliveryError ? ' (' + res.deliveryError + ').' : '.'),
+          payload.email
+        );
+        return;
+      }
+
+      barCall('done', 'TRANSMISSION RECEIVED');
+      await log('> TRANSMISSION RECEIVED', 'loud');
+      await log('> VERIFICATION DIRECTIVE ISSUED — CHECK YOUR INBOX');
       try { sessionStorage.setItem('ca_intake_email', payload.email); } catch (e) {}
 
-      form.hidden = true;
-      const done = document.getElementById('intakeDone');
-      done.hidden = false;
-      document.getElementById('intakeDoneMsg').textContent =
-        'A verification link is on its way to ' + payload.email +
-        '. Click it to open your session. Subject reference: ' + (res.subjectId || '(issued server-side)');
-      CA.term.status(truthStatus,
-        'The server accepted your form and says it asked Brevo to email a verification ' +
-        'link to ' + payload.email + '. Click it — nothing else happens until you do. ' +
-        'If it is not there in a couple of minutes, check spam; automated mail lives a hard life. ' +
-        'Need a fresh link? Reload this page and submit again.');
-      document.getElementById('intakeDoneTitle').focus();
+      showResult('ok', {
+        title: '■ REQUEST RECEIVED — CHECK YOUR INBOX',
+        message:
+          'A verification link is on its way to ' + payload.email + '. Click it to open ' +
+          'your session. Subject reference: ' + (res && res.subjectId ? res.subjectId : '(issued server-side)'),
+        steps: [
+          'The link works once and expires 15 minutes after it was sent.',
+          'Not there in a couple of minutes? Check spam — automated mail lives a hard life.',
+          'Need a fresh link? Reload this page and submit again.'
+        ],
+        truth:
+          'The server accepted your form and confirmed it handed a verification link for ' +
+          payload.email + ' to Brevo, our mail provider. Nothing else happens until you ' +
+          'click it — no sweep, no letters, no record beyond the encrypted form you just sent.'
+      });
+
     } catch (err) {
-      bar.fail('TRANSMISSION FAILED');
-      await CA.term.line(theaterLog, '> TRANSMISSION FAILED — SEE PLAIN-ENGLISH PANEL', { cls: 'amber' });
-      CA.theater.apiFail(truthStatus, err, 'Sending the form');
-      submitBtn.disabled = false;                   // retry is a real action
+      // Reaching here means OUR code threw, not the network. Same promise
+      // holds: they get an answer and a way forward, and the status line
+      // names the real error rather than dressing it up.
+      barCall('fail', 'TRANSMISSION INCOMPLETE');
+      confirmDeferred(
+        'the page hit an unexpected error while handling the response: ' +
+        (err && err.message ? err.message : String(err)),
+        lastPayload && lastPayload.email
+      );
     }
   });
+
+  /* ---- last-resort safety nets ----
+   * If a submit is in flight and something outside the handler above blows
+   * up — a script error, an unhandled rejection from a stray promise — the
+   * visitor still gets the panel. Neither of these can overwrite a real
+   * outcome: showResult() is a no-op once something has settled. */
+
+  function rescue() {
+    if (!inFlight || settled) return;
+    confirmDeferred(
+      'the page threw an unexpected script error mid-submission.',
+      lastPayload && lastPayload.email
+    );
+  }
+  window.addEventListener('error', rescue);
+  window.addEventListener('unhandledrejection', rescue);
 
 })();
 </script>
