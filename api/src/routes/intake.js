@@ -59,25 +59,60 @@ const STATE_RE = /^[A-Za-z]{2}$/;
 const PHONE_RE = /^[\d\s()+.\-]{7,20}$/;
 
 function str(v) {
-  return typeof v === 'string' ? v.trim() : '';
+  return typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '';
+}
+
+// Full state names → codes. The frontend normalises too, but a validation
+// rule that only holds when the caller happens to be running the current
+// build of our own JavaScript is not a validation rule. Someone typing
+// "Louisiana" has given a correct answer; turning that into a 400 is our
+// bug, not their mistake.
+const STATE_CODES = {
+  alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA',
+  colorado: 'CO', connecticut: 'CT', delaware: 'DE', districtofcolumbia: 'DC',
+  washingtondc: 'DC', florida: 'FL', georgia: 'GA', hawaii: 'HI', idaho: 'ID',
+  illinois: 'IL', indiana: 'IN', iowa: 'IA', kansas: 'KS', kentucky: 'KY',
+  louisiana: 'LA', maine: 'ME', maryland: 'MD', massachusetts: 'MA',
+  michigan: 'MI', minnesota: 'MN', mississippi: 'MS', missouri: 'MO',
+  montana: 'MT', nebraska: 'NE', nevada: 'NV', newhampshire: 'NH',
+  newjersey: 'NJ', newmexico: 'NM', newyork: 'NY', northcarolina: 'NC',
+  northdakota: 'ND', ohio: 'OH', oklahoma: 'OK', oregon: 'OR',
+  pennsylvania: 'PA', rhodeisland: 'RI', southcarolina: 'SC',
+  southdakota: 'SD', tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT',
+  virginia: 'VA', washington: 'WA', westvirginia: 'WV', wisconsin: 'WI',
+  wyoming: 'WY', puertorico: 'PR', guam: 'GU', virginislands: 'VI',
+  americansamoa: 'AS', northernmarianaislands: 'MP',
+};
+
+function normaliseState(raw) {
+  const v = str(raw).replace(/[.,]+$/, '');
+  if (STATE_RE.test(v)) return v.toUpperCase();
+  return STATE_CODES[v.toLowerCase().replace(/[^a-z]/g, '')] || v;
 }
 
 /** Validate + normalize the intake body. Throws 400 with PII-free messages. */
 function validateIntake(body) {
   const fullName = str(body.fullName);
   const email = str(body.email).toLowerCase();
-  const city = str(body.city);
-  const state = str(body.state);
+  const city = str(body.city).replace(/[.,]+$/, '');
+  const state = normaliseState(body.state);
   const phone = str(body.phone);
 
-  if (fullName.length < 2 || fullName.length > 120 || !fullName.includes(' ')) {
-    throw new HttpError(400, 'invalid_fullName: first and last name required');
+  // Length only. This used to also require a space, i.e. a Western
+  // first-plus-last name — which rejects mononyms and plenty of legitimately
+  // single-token legal names, for no security benefit: brokers are queried on
+  // name + city + state, and a one-token name simply matches less well. A
+  // worse match is the caller's problem to weigh; a locked door is ours.
+  if (fullName.length < 2 || fullName.length > 120) {
+    throw new HttpError(400, 'invalid_fullName: a name between 2 and 120 characters is required');
   }
   if (!EMAIL_RE.test(email) || email.length > 254) {
     throw new HttpError(400, 'invalid_email');
   }
   if (city.length < 1 || city.length > 80) throw new HttpError(400, 'invalid_city');
-  if (!STATE_RE.test(state)) throw new HttpError(400, 'invalid_state: two-letter code required');
+  if (!STATE_RE.test(state)) {
+    throw new HttpError(400, 'invalid_state: a US state name or two-letter code is required');
+  }
   if (phone && !PHONE_RE.test(phone)) throw new HttpError(400, 'invalid_phone');
 
   let priorAddresses = [];
@@ -126,8 +161,20 @@ export async function postIntake(request) {
 
   // Rate-limit magic-link emails per address (sessions counter) so this
   // endpoint can't be used to bomb someone's inbox.
+  //
+  // A READ FAILURE HERE IS NOT A REASON TO REJECT THE INTAKE. The counter is
+  // a courtesy cap on outbound mail, not a security control — R3 is the
+  // security control, and it lives in the magic link itself. If the sessions
+  // container is briefly unreachable we would rather send one more
+  // verification email than turn a store hiccup into a 500 for someone who
+  // did nothing wrong. Treat an unreadable counter as zero and carry on.
   const rlKey = `rl:magic:${emailHash}`;
-  const sent = parseInt((await sessions.get(rlKey)) || '0', 10);
+  let sent = 0;
+  try {
+    sent = parseInt((await sessions.get(rlKey)) || '0', 10) || 0;
+  } catch {
+    sent = 0;
+  }
   if (sent >= MAGIC_EMAILS_PER_HOUR) {
     throw new HttpError(429, 'rate_limited: too many verification emails — try again in an hour');
   }
@@ -156,12 +203,39 @@ export async function postIntake(request) {
   }
 
   // R3: nothing works without the magic-link round trip. Send it via Brevo.
-  // If Brevo fails, sendMagicLinkEmail THROWS and the client gets a real
-  // error — we never answer verificationSent:true unless Brevo accepted the
-  // message (house rule: never fake success).
+  //
+  // `verificationSent` is load-bearing and is NEVER true unless Brevo actually
+  // accepted the message (house rule: never fake success). What changed is the
+  // shape of the failure, not its honesty: a refusal from the mail provider
+  // used to propagate as a 5xx, which threw away a perfectly good stored
+  // subject and told the caller nothing they could act on. The subject record
+  // above is already written and is worth keeping — resubmitting later reuses
+  // it — so report the truth in a 200 the client can render: stored yes, sent
+  // no, and here is why. The frontend renders that as "received, delivery
+  // unconfirmed" with a retry, never as "check your inbox".
+  //
+  // The rate-limit counter is only incremented when a message really went out.
+  // Charging someone's hourly quota for an email that was never sent would cap
+  // them out of the retries this failure mode makes necessary.
   const token = await issueMagicToken(config, subjectId);
-  await sendMagicLinkEmail(config, pii.email, token);
-  await sessions.put(rlKey, String(sent + 1), 3600);
+  try {
+    await sendMagicLinkEmail(config, pii.email, token);
+  } catch (err) {
+    // R5: err.message from sendMagicLinkEmail is constructed PII-free (status
+    // code only, no recipient, no response body). Anything else gets a generic
+    // string rather than a message we have not vetted for PII.
+    const reason =
+      err instanceof HttpError ? err.message : 'verification_email_failed: mail provider unreachable';
+    return json({ subjectId, verificationSent: false, deliveryError: reason });
+  }
+
+  // A failure to record the send is not worth failing the request over — the
+  // email is already gone. Worst case the cap is one message looser this hour.
+  try {
+    await sessions.put(rlKey, String(sent + 1), 3600);
+  } catch {
+    /* counter is best-effort; see the read above */
+  }
 
   return json({ subjectId, verificationSent: true });
 }

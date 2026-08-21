@@ -538,6 +538,11 @@ no matter how good the terminal looks.
       (localStorage + server flag — reload, different device, still gone).
 - [ ] Stripe test payment completes and lands on
       `https://doziertechgroup.com/dig/thanks`; Apple Pay sheet appears on Safari.
+- [ ] Intake with the API unreachable (block the host in devtools, or point
+      `API_BASE` at a dead name) still lands on the confirmation panel, shows
+      "DELIVERY UNCONFIRMED" rather than "check your inbox", and offers a retry.
+- [ ] Intake with a full state name ("Louisiana") and a single-word name both
+      succeed — neither is a 400 any more.
 - [ ] Venmo handle placeholder replaced; deep link opens Venmo, fallback URL works.
 - [ ] `git grep -iE "api[_-]?key|secret" -- ':!*.md'` shows no live values.
       `api/local.settings.json` is **not** tracked (`git ls-files api/ | grep local.settings`

@@ -87,6 +87,8 @@ export async function issueMagicToken(env, subjectId) {
  * unless this function returned. We surface Brevo's HTTP status but never its
  * response body — Brevo error bodies can echo the recipient address (R5).
  */
+const BREVO_TIMEOUT_MS = 10000;
+
 export async function sendMagicLinkEmail(env, recipientEmail, token) {
   // Accept both (env, recipientEmail, token) and (recipientEmail, token).
   if (token === undefined && typeof env === 'string') {
@@ -100,43 +102,60 @@ export async function sendMagicLinkEmail(env, recipientEmail, token) {
   }
   const verifyUrl = `${cfg.PUBLIC_APP_URL}/verify.html?token=${token}`;
 
-  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    headers: {
-      'api-key': cfg.BREVO_API_KEY,
-      'content-type': 'application/json',
-      accept: 'application/json',
-    },
-    body: JSON.stringify({
-      sender: { name: cfg.SENDER_NAME || 'CONSENT ARCHAEOLOGY', email: cfg.SENDER_EMAIL },
-      to: [{ email: recipientEmail }],
-      subject: 'CLEARANCE VERIFICATION — one click required',
-      // Theater in the subject line, truth in the body (DESIGN §3).
-      textContent: [
-        'CONSENT ARCHAEOLOGY — identity verification',
-        '',
-        'Someone (hopefully you) asked us to run a data-broker sweep on this',
-        'email address. Clicking the link below proves the address is yours.',
-        'That proof is the only thing standing between this tool and being a',
-        'stalking engine, so we will not run anything until you click it.',
-        '',
-        verifyUrl,
-        '',
-        'The link works once and expires in 15 minutes.',
-        'If you did not request this, do nothing — nothing will happen.',
-      ].join('\n'),
-      htmlContent:
-        '<div style="font-family:ui-monospace,Menlo,Consolas,monospace;background:#0a0e0a;color:#33ff66;padding:24px">' +
-        '<p>▓▓ CONSENT ARCHAEOLOGY — IDENTITY VERIFICATION</p>' +
-        '<p style="color:#c8ffc8">Someone (hopefully you) asked us to run a data-broker sweep on this ' +
-        'email address. Clicking below proves the address is yours — the only thing standing ' +
-        'between this tool and being a stalking engine. No click, no sweep.</p>' +
-        `<p><a href="${verifyUrl}" style="color:#ffb000">▶ VERIFY AND PROCEED</a></p>` +
-        '<p style="color:#7a9a7a">This link works once and expires in 15 minutes. ' +
-        'If you did not request this, do nothing — nothing will happen.</p>' +
-        '</div>',
-    }),
-  });
+  // Hard timeout on the outbound call. Without one, a mail provider that
+  // accepts the connection and then stalls holds this request open until the
+  // Functions host times it out — which the caller experiences as a spinner
+  // that never resolves. Failing at 10s produces a real, reportable error that
+  // /api/intake turns into "stored, delivery unconfirmed".
+  let res;
+  try {
+    res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      signal: AbortSignal.timeout(BREVO_TIMEOUT_MS),
+      headers: {
+        'api-key': cfg.BREVO_API_KEY,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({
+        sender: { name: cfg.SENDER_NAME || 'CONSENT ARCHAEOLOGY', email: cfg.SENDER_EMAIL },
+        to: [{ email: recipientEmail }],
+        subject: 'CLEARANCE VERIFICATION — one click required',
+        // Theater in the subject line, truth in the body (DESIGN §3).
+        textContent: [
+          'CONSENT ARCHAEOLOGY — identity verification',
+          '',
+          'Someone (hopefully you) asked us to run a data-broker sweep on this',
+          'email address. Clicking the link below proves the address is yours.',
+          'That proof is the only thing standing between this tool and being a',
+          'stalking engine, so we will not run anything until you click it.',
+          '',
+          verifyUrl,
+          '',
+          'The link works once and expires in 15 minutes.',
+          'If you did not request this, do nothing — nothing will happen.',
+        ].join('\n'),
+        htmlContent:
+          '<div style="font-family:ui-monospace,Menlo,Consolas,monospace;background:#0a0e0a;color:#33ff66;padding:24px">' +
+          '<p>▓▓ CONSENT ARCHAEOLOGY — IDENTITY VERIFICATION</p>' +
+          '<p style="color:#c8ffc8">Someone (hopefully you) asked us to run a data-broker sweep on this ' +
+          'email address. Clicking below proves the address is yours — the only thing standing ' +
+          'between this tool and being a stalking engine. No click, no sweep.</p>' +
+          `<p><a href="${verifyUrl}" style="color:#ffb000">▶ VERIFY AND PROCEED</a></p>` +
+          '<p style="color:#7a9a7a">This link works once and expires in 15 minutes. ' +
+          'If you did not request this, do nothing — nothing will happen.</p>' +
+          '</div>',
+      }),
+    });
+  } catch (err) {
+    // Timeout, DNS, TLS, connection reset. R5: never interpolate err.message —
+    // fetch errors can quote the request, and the request carries the
+    // recipient address. Name the failure class only.
+    const kind = err && (err.name === 'TimeoutError' || err.name === 'AbortError')
+      ? 'timed out'
+      : 'unreachable';
+    throw new HttpError(502, `verification_email_failed: mail provider ${kind}`);
+  }
 
   if (!res.ok) {
     // Real error, propagated. Status only — no response body, no recipient (R5).

@@ -244,6 +244,32 @@ See `case-files/` for the worked example.
 
 ---
 
+## 5a. The intake confirmation panel
+
+Pressing TRANSMIT always ends on the confirmation panel, including when the backend is
+unreachable, the mail provider refuses, or the page's own script throws. Someone who
+showed up and hit a failure is still someone who showed up, and stranding them on a
+disabled button with no next step helps nobody. But the panel has three states and the
+copy differs in all three:
+
+| state | when | headline | what it says |
+|---|---|---|---|
+| `ok` | server confirmed the mail provider took the message | REQUEST RECEIVED — CHECK YOUR INBOX | check your inbox |
+| `deferred` | anything we could not confirm | REQUEST RECEIVED — DELIVERY UNCONFIRMED | the email may never come, here is a retry and a human to email |
+| `fixable` | server named a field the visitor can correct | ONE FIELD NEEDS A SECOND LOOK | which field, and the form back with it focused |
+
+This does **not** relax house rule #1. #1 forbids reporting success that did not happen;
+it does not require a dead end when something fails. `verificationSent` is still never
+`true` unless the mail provider actually accepted the message, and the `deferred` panel
+says in plain English that the link may never arrive. The guarantee is that they always
+land somewhere; it is never that we tell them a link is coming when it is not.
+
+Nothing that could make a `deferred` outcome read as a success belongs on this panel —
+if you find yourself softening the status line to make something else land better, you
+have broken the rule that matters.
+
+---
+
 ## 6. Repo layout
 
 ```

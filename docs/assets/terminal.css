@@ -700,6 +700,34 @@ pre.letter {
   line-height: 1.6;
 }
 
+/* ---------- intake confirmation ----------
+   One panel, three honest states. `ok` = the server confirmed it sent the
+   verification email. `deferred` = we could not confirm delivery (backend
+   unreachable, mail provider refused, our own script threw) and the copy
+   says so. `fixable` = the server rejected one field and told us which.
+   All three carry a next step; none of them dead-ends. */
+
+.intake-done {
+  margin-top: 1.2rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--phos-dim);
+  background: var(--bg-raised);
+}
+
+.intake-done.deferred { border-color: var(--amber); }
+
+.intake-done h3 { margin: 0 0 0.5rem; font-size: 0.95rem; letter-spacing: 0.12em; }
+.intake-done h3:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.intake-done .ink { color: var(--ink); line-height: 1.65; margin: 0.4rem 0; }
+
+.intake-done .next-steps {
+  margin: 0.8rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--ink-dim);
+  font-size: 0.86rem;
+  line-height: 1.65;
+}
+
 /* ---------- utility ---------- */
 
 .sr-only {
